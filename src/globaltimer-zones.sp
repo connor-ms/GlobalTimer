@@ -10,7 +10,7 @@
 #define TIMER_ZONE_UPDATERATE 1.0
 #define MAXZONES              4
 
-enum struct PlayerTimerInfo
+enum struct PlayerZoneInfo
 {
     bool   bIsCreatingZone;
     int    iInZone;              // -1 if not in zone, otherwise zone index (0 -> 3)
@@ -20,7 +20,7 @@ enum struct PlayerTimerInfo
     Handle hSnapTimer;
 }
 
-PlayerTimerInfo g_pInfo[MAXPLAYERS + 1];
+PlayerZoneInfo g_pInfo[MAXPLAYERS + 1];
 
 float  g_fZonePoints[MAXZONES][8][3];
 float  g_fOrigin[MAXPLAYERS + 1][3];
@@ -37,6 +37,7 @@ char   g_sMapName[128];
 
 Handle g_hZoneLeaveForward;
 Handle g_hZoneEnterForward;
+Handle g_hPlayerTrackChangeForward;
 
 Database g_hDB;
 bool     g_bDBLoaded;
@@ -71,6 +72,7 @@ public void OnPluginStart()
     g_bDBLoaded = false;
     g_hZoneLeaveForward = CreateGlobalForward("OnPlayerLeaveZone", ET_Event, Param_Cell, Param_Cell, Param_Cell);
     g_hZoneEnterForward = CreateGlobalForward("OnPlayerEnterZone", ET_Event, Param_Cell, Param_Cell, Param_Cell);
+    g_hPlayerTrackChangeForward = CreateGlobalForward("OnPlayerTrackChange", ET_Event, Param_Cell);
 
     // Admin commands
     RegAdminCmd("sm_zone", CMD_Zone, ADMFLAG_GENERIC, "Opens zone menu.");
@@ -95,7 +97,8 @@ public void OnPluginStart()
 
 public APLRes AskPluginLoad2(Handle plugin, bool late, char[] error, int err_max)
 {
-    CreateNative("IsClientInZone", Native_IsClientInZone);
+    CreateNative("IsPlayerInZone", Native_IsPlayerInZone);
+    CreateNative("GetPlayerTrack", Native_GetPlayerTrack);
 
     RegPluginLibrary("globaltimer_zones");
 
@@ -168,7 +171,7 @@ void SetupDB()
     g_hDB.Query(DB_ErrorHandler, "CREATE TABLE IF NOT EXISTS zones(id INTEGER PRIMARY KEY, map TEXT, track INTEGER, point1x REAL, point1y REAL, point2x REAL, point2y REAL, height REAL);", _);
 
     g_bDBLoaded = true;
-    PrintToServer("%s Database successfully loaded!", PREFIX);
+    PrintToServer("%s Zone database successfully loaded!", PREFIX);
 
     CloseHandle(hKeyValues);
 }
@@ -311,15 +314,6 @@ public void DB_RemoveZoneHandler(Database db, DBResultSet results, const char[] 
 
         Format(sQuery, sizeof(sQuery), "DELETE FROM 'zones' WHERE id = %i", iRowId);
         g_hDB.Query(DB_ErrorHandler, sQuery, _);
-    }
-}
-
-public void DB_ErrorHandler(Database db, DBResultSet results, const char[] error, any data)
-{
-    if (results == null)
-    {
-        PrintToServer("DB error! (%s)", error);
-        return;
     }
 }
 
@@ -747,7 +741,19 @@ public Action CMD_Main(int client, int args)
         return Plugin_Handled;
     }
 
+    int iPreviousTrack = g_pInfo[client].iCurrentTrack;
+
     g_pInfo[client].iCurrentTrack = Track_MainStart;
+
+    // If player is switching from different track
+    if (iPreviousTrack != Track_MainStart)
+    {
+        Call_StartForward(g_hPlayerTrackChangeForward);
+
+        Call_PushCell(client);
+
+        Call_Finish();
+    }
 
     CMD_Reset(client, 0);
 
@@ -762,7 +768,19 @@ public Action CMD_Bonus(int client, int args)
         return Plugin_Handled;
     }
 
+    int iPreviousTrack = g_pInfo[client].iCurrentTrack;
+
     g_pInfo[client].iCurrentTrack = Track_BonusStart;
+
+    // If player is switching from different track
+    if (iPreviousTrack != Track_BonusStart)
+    {
+        Call_StartForward(g_hPlayerTrackChangeForward);
+
+        Call_PushCell(client);
+
+        Call_Finish();
+    }
 
     CMD_Reset(client, 0);
 
@@ -790,7 +808,7 @@ public Action CMD_End(int client, int args)
 // Misc
 //=================================
 
-public int Native_IsClientInZone(Handle plugin, int param)
+public int Native_IsPlayerInZone(Handle plugin, int param)
 {
     if (!IsValidClient(GetNativeCell(1)))
     {
@@ -798,6 +816,16 @@ public int Native_IsClientInZone(Handle plugin, int param)
     }
     
     return g_pInfo[GetNativeCell(1)].iInZone;
+}
+
+public int Native_GetPlayerTrack(Handle plugin, int param)
+{
+    if (!IsValidClient(GetNativeCell(1)))
+    {
+        return -1;
+    }
+
+    return g_pInfo[GetNativeCell(1)].iCurrentTrack;
 }
 
 void HandleZoneMovement(int client)

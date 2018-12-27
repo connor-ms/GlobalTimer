@@ -34,8 +34,10 @@ enum
 
 forward void OnPlayerLeaveZone(int client, int tick, int track);
 forward void OnPlayerEnterZone(int client, int tick, int track);
+forward void OnPlayerTrackChange(int client);
 
-native int IsClientInZone(int client);
+native int IsPlayerInZone(int client);
+native int GetPlayerTrack(int client);
 
 stock float min(float num1, float num2)
 {
@@ -77,4 +79,18 @@ stock ClearTimer(&Handle:timer)
 stock bool IsValidClient(int client)
 {
     return IsClientInGame(client) && IsClientConnected(client) && !IsFakeClient(client);
+}
+
+stock void DB_ErrorHandler(Database db, DBResultSet results, const char[] error, any data)
+{
+    if (results == null)
+    {
+        PrintToServer("DB error! (%s)", error);
+        return;
+    }
+}
+
+stock void FormatSeconds(int seconds, char[] output)
+{
+    
 }
