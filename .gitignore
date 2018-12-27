@@ -1,0 +1,7 @@
+.vscode/
+compiled/
+*.exe
+*.bat
+*.inc
+!globaltimer.inc
+*.lnk
