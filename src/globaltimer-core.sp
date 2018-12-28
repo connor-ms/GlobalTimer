@@ -11,7 +11,6 @@ enum struct PlayerTimerInfo
     bool bInRun;
     int  iTrack;
     int  iStartTick;
-
 }
 
 PlayerTimerInfo g_pInfo[MAXPLAYERS + 1];
@@ -28,6 +27,15 @@ public Plugin myinfo =
 public void OnPluginStart()
 {
     SetupDB();
+}
+
+public APLRes AskPluginLoad2(Handle plugin, bool late, char[] error, int err_max)
+{
+    CreateNative("StopTimer", Native_StopTimer);
+
+    RegPluginLibrary("globaltimer_core");
+
+    return APLRes_Success;
 }
 
 void SetupDB()
@@ -82,4 +90,14 @@ public void OnPlayerEnterZone(int client, int tick, int track)
 
         g_pInfo[client].bInRun = false;
     }
+}
+
+public int Native_StopTimer(Handle plugin, int param)
+{
+    if (!IsValidClient(GetNativeCell(1)))
+    {
+        return;
+    }
+
+    g_pInfo[GetNativeCell(1)].bInRun = false;
 }

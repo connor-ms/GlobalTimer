@@ -22,12 +22,17 @@ enum struct PlayerZoneInfo
 
 PlayerZoneInfo g_pInfo[MAXPLAYERS + 1];
 
+float  g_fSpawnPoint[MAXPLAYERS + 1][2][3];
+float  g_fSpawnAngles[MAXPLAYERS + 1][2][3]
+;
+
 float  g_fZonePoints[MAXZONES][8][3];
 float  g_fOrigin[MAXPLAYERS + 1][3];
 float  g_fSnapPoint[MAXPLAYERS + 1][3];
 float  g_fSelectedPoints[MAXPLAYERS + 1][2][3];
 
 bool   g_bIsZoneValid[MAXZONES];
+bool   g_bHasCustomSpawn[MAXPLAYERS + 1][2];
 
 int    g_iBeam;
 int    g_iSnapSize = 64;
@@ -78,10 +83,11 @@ public void OnPluginStart()
     RegAdminCmd("sm_zone", CMD_Zone, ADMFLAG_GENERIC, "Opens zone menu.");
 
     // Player commands
-    RegConsoleCmd("sm_reset", CMD_Reset, "Restarts players timer.");
-    RegConsoleCmd("sm_bonus", CMD_Bonus, "Teleports player to bonus.");
-    RegConsoleCmd("sm_main",  CMD_Main,  "Teleports player to main track.");
-    RegConsoleCmd("sm_end",   CMD_End,   "Teleports player to end of current track.");
+    RegConsoleCmd("sm_reset",    CMD_Reset,    "Restarts players timer.");
+    RegConsoleCmd("sm_bonus",    CMD_Bonus,    "Teleports player to bonus.");
+    RegConsoleCmd("sm_main",     CMD_Main,     "Teleports player to main track.");
+    RegConsoleCmd("sm_end",      CMD_End,      "Teleports player to end of current track.");
+    RegConsoleCmd("sm_setspawn", CMD_SetSpawn, "Sets players spawnpoint.");
 
     // Aliases
     RegConsoleCmd("sm_r",     CMD_Reset, "Restarts players timer.");
@@ -228,7 +234,7 @@ void UpdateZoneRow(int id, int client)
     g_hDB.Query(DB_ErrorHandler, sQuery, _);
 }
 
-void RemoveZoneRow(int track, int client)
+void RemoveZoneRow(int track)
 {
     char sQuery[256];
 
@@ -583,13 +589,15 @@ public int MenuHandler_Confirm(Menu menu, MenuAction action, int client, int ind
         
         if (StrEqual(sInfo, "yes"))
         {
-            RemoveZoneRow(g_pInfo[client].iEditingTrack, client);
+            RemoveZoneRow(g_pInfo[client].iEditingTrack);
             g_bIsZoneValid[g_pInfo[client].iEditingTrack] = false;
 
             if (IsValidEntity(g_iTrigger[g_pInfo[client].iEditingTrack]))
             {
                 RemoveEntity(g_iTrigger[g_pInfo[client].iEditingTrack]);
             }
+
+            PrintToChat(client, "%s Succesfully removed track '%s'", PREFIX, g_sTrackNames[g_pInfo[client].iEditingTrack]);
         }
         
         DisplayRemoveZoneMenu(client);
@@ -725,10 +733,18 @@ public Action CMD_Reset(int client, int args)
         }
     }
 
-    float fOrigin[3];
+    if (g_bHasCustomSpawn[client][g_pInfo[client].iCurrentTrack / 2])
+    {
+        TeleportEntity(client, g_fSpawnPoint[client][g_pInfo[client].iCurrentTrack / 2], g_fSpawnAngles[client][g_pInfo[client].iCurrentTrack / 2], { 0.0, 0.0, 0.0 });
+    }
+    else
+    {
+        float fOrigin[3];
+        vecavg(fOrigin, g_fZonePoints[g_pInfo[client].iCurrentTrack][0], g_fZonePoints[g_pInfo[client].iCurrentTrack][2]);
+        TeleportEntity(client, fOrigin, NULL_VECTOR, { 0.0, 0.0, 0.0 });
+    }
 
-    vecavg(fOrigin, g_fZonePoints[g_pInfo[client].iCurrentTrack][0], g_fZonePoints[g_pInfo[client].iCurrentTrack][2]);
-    TeleportEntity(client, fOrigin, NULL_VECTOR, { 0.0, 0.0, 0.0 });
+    StopTimer(client);
 
     return Plugin_Handled;
 }
@@ -795,6 +811,8 @@ public Action CMD_End(int client, int args)
         return Plugin_Handled;
     }
     
+    StopTimer(client);
+
     float fOrigin[3];
 
     vecavg(fOrigin, g_fZonePoints[g_pInfo[client].iCurrentTrack + 1][0], g_fZonePoints[g_pInfo[client].iCurrentTrack + 1][2]);
@@ -802,6 +820,27 @@ public Action CMD_End(int client, int args)
     TeleportEntity(client, fOrigin, NULL_VECTOR, { 0.0, 0.0, 0.0 });
 
     return Plugin_Handled;
+}
+
+public Action CMD_SetSpawn(int client, int args)
+{
+    int iTrack = g_pInfo[client].iCurrentTrack;
+
+    if (g_pInfo[client].iInZone != iTrack)
+    {
+        PrintToChat(client, "%s Must be in selected zone to set spawnpoint.", PREFIX);
+        return;
+    }
+
+    float fAngles[3];
+
+    GetClientEyeAngles(client, fAngles);
+
+    g_fSpawnPoint[client][iTrack / 2]  = g_fOrigin[client];
+    g_fSpawnAngles[client][iTrack / 2] = fAngles;
+    g_bHasCustomSpawn[client][iTrack / 2] = true;
+
+    PrintToChat(client, "%s Saved spawn.", PREFIX);
 }
 
 //=================================

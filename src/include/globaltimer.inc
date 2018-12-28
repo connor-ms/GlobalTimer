@@ -22,7 +22,7 @@
     Purple:      \x0E
 */
 
-#define PREFIX " \x01[\x0BGlobalTimer\x01]\x08"
+#define PREFIX " \x01[\x0BGlobalTimer\x01]"
 
 enum
 {
@@ -36,8 +36,9 @@ forward void OnPlayerLeaveZone(int client, int tick, int track);
 forward void OnPlayerEnterZone(int client, int tick, int track);
 forward void OnPlayerTrackChange(int client);
 
-native int IsPlayerInZone(int client);
-native int GetPlayerTrack(int client);
+native int  IsPlayerInZone(int client);
+native int  GetPlayerTrack(int client);
+native void StopTimer(int client);
 
 stock float min(float num1, float num2)
 {
