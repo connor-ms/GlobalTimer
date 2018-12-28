@@ -88,6 +88,7 @@ public void OnPluginStart()
     RegConsoleCmd("sm_main",     CMD_Main,     "Teleports player to main track.");
     RegConsoleCmd("sm_end",      CMD_End,      "Teleports player to end of current track.");
     RegConsoleCmd("sm_setspawn", CMD_SetSpawn, "Sets players spawnpoint.");
+    RegConsoleCmd("sm_delspawn", CMD_DelSpawn, "Deletes set spawnpoint.");
 
     // Aliases
     RegConsoleCmd("sm_r",     CMD_Reset, "Restarts players timer.");
@@ -829,7 +830,7 @@ public Action CMD_SetSpawn(int client, int args)
     if (g_pInfo[client].iInZone != iTrack)
     {
         PrintToChat(client, "%s Must be in selected zone to set spawnpoint.", PREFIX);
-        return;
+        return Plugin_Handled;
     }
 
     float fAngles[3];
@@ -841,6 +842,24 @@ public Action CMD_SetSpawn(int client, int args)
     g_bHasCustomSpawn[client][iTrack / 2] = true;
 
     PrintToChat(client, "%s Saved spawn.", PREFIX);
+
+    return Plugin_Handled;
+}
+
+public Action CMD_DelSpawn(int client, int args)
+{
+    int iTrack = g_pInfo[client].iCurrentTrack;
+
+    if (!g_bHasCustomSpawn[client][iTrack / 2])
+    {
+        PrintToChat(client, "%s No custom spawn set for current track.", PREFIX);
+        return Plugin_Handled;
+    }
+
+    g_bHasCustomSpawn[client][iTrack / 2] = false;
+    PrintToChat(client, "%s Removed custom spawn.", PREFIX);
+    
+    return Plugin_Handled;
 }
 
 //=================================
