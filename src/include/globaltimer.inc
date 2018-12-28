@@ -22,7 +22,7 @@
     Purple:      \x0E
 */
 
-#define PREFIX " \x01[\x0BGlobalTimer\x01]"
+#define PREFIX " \x01[\x0BGlobalTimer\x01]\x08"
 
 enum
 {
@@ -90,7 +90,28 @@ stock void DB_ErrorHandler(Database db, DBResultSet results, const char[] error,
     }
 }
 
-stock void FormatSeconds(int seconds, char[] output)
+stock void FormatSeconds(float time, char[] output, int outputsize)
 {
-    
+    int   iHours;
+    int   iMinutes;
+    float iSeconds;
+
+    iHours   = RoundToFloor(time / 3600);
+    iMinutes = RoundToFloor((time - (iHours * 3600)) / 60);
+    time    -= (iHours * 3600);
+    time    -= (iMinutes * 60);
+    iSeconds = RoundToFloor(time) + (time - RoundToFloor(time));
+
+    if (iHours > 0)
+    {
+        Format(output, outputsize, "%s%i:%s%i:%s%.3f", (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10) ? "0" : "", iSeconds);
+    }
+    else if (iMinutes > 0)
+    {
+        Format(output, outputsize, "%s%i:%s%.3f", (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10.0) ? "0" : "", iSeconds);
+    }
+    else
+    {
+        Format(output, outputsize, "%s%.3f", (iSeconds < 10) ? "0" : "", iSeconds);
+    }
 }

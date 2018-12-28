@@ -11,6 +11,7 @@ enum struct PlayerTimerInfo
     bool bInRun;
     int  iTrack;
     int  iStartTick;
+
 }
 
 PlayerTimerInfo g_pInfo[MAXPLAYERS + 1];
@@ -73,7 +74,11 @@ public void OnPlayerEnterZone(int client, int tick, int track)
 {
     if (track == g_pInfo[client].iTrack + 1 && g_pInfo[client].bInRun)
     {
-        PrintToChat(client, "Finished in %f seconds.", (GetGameTickCount() - g_pInfo[client].iStartTick) * GetTickInterval());
+        char sFormattedTime[64];
+
+        FormatSeconds((GetGameTickCount() - g_pInfo[client].iStartTick) * GetTickInterval(), sFormattedTime, sizeof(sFormattedTime));
+
+        PrintToChat(client, "Finished in %s.", sFormattedTime);
 
         g_pInfo[client].bInRun = false;
     }
