@@ -6,7 +6,7 @@
 
 #pragma newdecls required
 
-#define DEFAULT_ZONE_HEIGHT   100
+#define DEFAULT_ZONE_HEIGHT   140
 #define TIMER_ZONE_UPDATERATE 1.0
 #define MAXZONES              4
 
@@ -23,14 +23,14 @@ enum struct PlayerZoneInfo
 PlayerZoneInfo g_pInfo[MAXPLAYERS + 1];
 
 float  g_fSpawnPoint[MAXPLAYERS + 1][2][3];
-float  g_fSpawnAngles[MAXPLAYERS + 1][2][3]
-;
+float  g_fSpawnAngles[MAXPLAYERS + 1][2][3];
 
 float  g_fZonePoints[MAXZONES][8][3];
 float  g_fOrigin[MAXPLAYERS + 1][3];
 float  g_fSnapPoint[MAXPLAYERS + 1][3];
 float  g_fSelectedPoints[MAXPLAYERS + 1][2][3];
 
+bool   g_bLate;
 bool   g_bIsZoneValid[MAXZONES];
 bool   g_bHasCustomSpawn[MAXPLAYERS + 1][2];
 
@@ -100,10 +100,57 @@ public void OnPluginStart()
     HookEvent("round_start", OnRoundStart);
 
     SetupDB();
+
+    if (g_bLate)
+    {
+        for (int i = 1; i < MAXPLAYERS; i++)
+        {
+            if (IsClientConnected(i))
+            {
+                OnClientConnected(i);
+            }
+        }
+    }
+}
+
+public void OnPlayerBeatPb(int client, int track, float oldtime, float newtime)
+{
+    char sName[64];
+    char sOldTime[64];
+    char sNewTime[64];
+
+    GetClientName(client, sName, sizeof(sName));
+
+    FormatSeconds(oldtime, sOldTime, sizeof(sOldTime), true);
+    FormatSeconds(newtime, sNewTime, sizeof(sNewTime), true);
+
+    if (oldtime == 0.0)
+    {
+        PrintToChatAll("%s %s finished the map in %s.", PREFIX, sName, sNewTime);
+    }
+    else
+    {
+        PrintToChatAll("%s %s beat pb of %s with new time of %s", PREFIX, sName, sOldTime, sNewTime);
+    }
+}
+
+public void OnPlayerFinishedTrack(int client, int track, float time, float pb)
+{
+    char sName[64];
+    char sTime[64];
+    char sPb[64];
+
+    GetClientName(client, sName, sizeof(sName));
+    FormatSeconds(time, sTime, sizeof(sTime), true);
+    FormatSeconds(pb, sPb, sizeof(sPb), true);
+
+    PrintToChatAll("%s %s finished track %i in %s (pb: %s).", PREFIX, sName, track, sTime, sPb);
 }
 
 public APLRes AskPluginLoad2(Handle plugin, bool late, char[] error, int err_max)
 {
+    g_bLate = late;
+
     CreateNative("IsPlayerInZone", Native_IsPlayerInZone);
     CreateNative("GetPlayerTrack", Native_GetPlayerTrack);
 
@@ -170,7 +217,7 @@ void SetupDB()
 
     if (g_hDB == null)
     {
-        PrintToServer("%s Error connecting to db (%s)", PREFIX, sError);
+        SetFailState("%s Error connecting to db (%s)", PREFIX, sError);
         CloseHandle(g_hDB);
         return;
     }
@@ -250,7 +297,7 @@ public void DB_CreateZoneHandler(Database db, DBResultSet results, const char[] 
 
     if (db == null || results == null)
     {
-        PrintToServer("%s DB error. (%s)", PREFIX, error);
+        SetFailState("%s DB error. (%s)", PREFIX, error);
         return;
     }
 
@@ -270,7 +317,7 @@ public void DB_LoadZoneHandler(Database db, DBResultSet results, const char[] er
 {
     if (db == null || results == null)
     {
-        PrintToServer("%s DB error. (%s)", PREFIX, error);
+        SetFailState("%s DB error. (%s)", PREFIX, error);
         return;
     }
 
@@ -303,7 +350,7 @@ public void DB_RemoveZoneHandler(Database db, DBResultSet results, const char[] 
 {
     if (db == null || results == null)
     {
-        PrintToServer("Error (%s)", error);
+        SetFailState("Error (%s)", error);
         return;
     }
 
@@ -352,7 +399,7 @@ public Action DrawZoneLoop(Handle timer, int client)
     {
         if (g_bIsZoneValid[i])
         {
-            DrawZone(client, g_fZonePoints[i], g_iBeam, 7.0, g_iTrackColors[i], 0);
+            DrawZone(client, g_fZonePoints[i], g_iBeam, 5.0, g_iTrackColors[i], 0);
         }
     }
 }

@@ -32,12 +32,105 @@ enum
     Track_BonusEnd
 };
 
-forward void OnPlayerLeaveZone(int client, int tick, int track);
-forward void OnPlayerEnterZone(int client, int tick, int track);
+/**
+ * Called when a player leaves a zone.
+ *
+ * @param client     Client index.
+ * @param tick       Current server tick.
+ * @param zone       Zone left from.
+ * @noreturn
+ */
+forward void OnPlayerLeaveZone(int client, int tick, int zone);
+
+/**
+ * Called when a player enters a zone.
+ *
+ * @param client     Client index.
+ * @param tick       Current server tick.
+ * @param zone       Zone entered.
+ * @noreturn
+ */
+forward void OnPlayerEnterZone(int client, int tick, int zone);
+
+/**
+ * Called when a player changes track. (ex: from main to bonus, or vice-versa)
+ *
+ * @param client     Client index.
+ * @noreturn
+ */
 forward void OnPlayerTrackChange(int client);
 
-native int  IsPlayerInZone(int client);
-native int  GetPlayerTrack(int client);
+/**
+ * Called when a player beats their pb, but doesn't beat sr.
+ *
+ * @param client     Client index.
+ * @param track      Track the run occurred on (main or bonus).
+ * @param oldtime    Client's previous time.
+ * @param newtime    New set time.
+ * @noreturn
+ */
+forward void OnPlayerBeatPb(int client, int track, float oldtime, float newtime);
+
+/**
+ * Called when a player finishes the map, but doesn't beat pb or sr.
+ *
+ * @param client     Client index.
+ * @param track      Track the run occurred on (main or bonus).
+ * @param time       Amount of time it took to complete the track.
+ * @param pb         Players current pb.
+ * @noreturn
+ */
+forward void OnPlayerFinishedTrack(int client, int track, float time, float pb);
+
+/**
+ * Called when a player's timer starts.
+ *
+ * @param client     Client index.
+ * @param track      Track the timer is running on (main or bonus).
+ * @param tick       Tick the timer started.
+ * @noreturn
+ */
+forward void OnPlayerTimerStart(int client, int track, int tick);
+
+/**
+ * Gets the zone the client is currently in.
+ *
+ * @param client     Client index.
+ * @return           The index of the zone, or -1 if the client
+ *                   isn't in a zone.
+ */
+native int IsPlayerInZone(int client);
+
+/**
+ * Gets the client's current track.
+ *
+ * @param client     Client index.
+ * @return           The current track (main or bonus).
+ */
+native int GetPlayerTrack(int client);
+
+/**
+ * Gets the tick the client's timer started.
+ *
+ * @param client     Client index.
+ * @return           Tick count the timer started at.
+ */
+ native int GetPlayerStartTick(int client);
+
+/**
+ * Gets if the client is in a run.
+ *
+ * @param client     Client index.
+ * @return           Whether or not a player's timer is going.
+ */
+ native bool IsPlayerInRun(int client);
+
+/**
+ * Stops the client's timer.
+ *
+ * @param client     Client index.
+ * @noreturn
+ */
 native void StopTimer(int client);
 
 stock float min(float num1, float num2)
@@ -91,7 +184,7 @@ stock void DB_ErrorHandler(Database db, DBResultSet results, const char[] error,
     }
 }
 
-stock void FormatSeconds(float time, char[] output, int outputsize)
+stock void FormatSeconds(float time, char[] output, int size, bool accurate)
 {
     int   iHours;
     int   iMinutes;
@@ -105,14 +198,14 @@ stock void FormatSeconds(float time, char[] output, int outputsize)
 
     if (iHours > 0)
     {
-        Format(output, outputsize, "%s%i:%s%i:%s%.3f", (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10) ? "0" : "", iSeconds);
+        Format(output, size, accurate ? "%s%i:%s%i:%s%.3f" : "%s%i:%s%i:%s%.1f", (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10) ? "0" : "", iSeconds);
     }
     else if (iMinutes > 0)
     {
-        Format(output, outputsize, "%s%i:%s%.3f", (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10.0) ? "0" : "", iSeconds);
+        Format(output, size, accurate ? "%s%i:%s%.3f" : "%s%i:%s%.1f", (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10.0) ? "0" : "", iSeconds);
     }
     else
     {
-        Format(output, outputsize, "%s%.3f", (iSeconds < 10) ? "0" : "", iSeconds);
+        Format(output, size, accurate ? "%s%.3f" : "%s%.1f", (iSeconds < 10) ? "0" : "", iSeconds);
     }
 }
