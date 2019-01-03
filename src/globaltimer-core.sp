@@ -6,16 +6,17 @@
 
 enum struct PlayerTimerInfo
 {
-    char  sId64[64];
-    bool  bInRun;
-    int   iTrack;
-    int   iStartTick;
-    float fPb[4];
+    char  sId64[64];     // SteamID64 of player
+    bool  bInRun;        // Whether or not timer is running
+    int   iTrack;        // Track player is running on
+    int   iStartTick;    // Tick player left the start zone
+    float fPb[4];        // Pb (in seconds) for each track (only 0 and 2 are used, but size is 4
+                         //                                 so arrays line up easier)
 }
 
 PlayerTimerInfo g_pInfo[MAXPLAYERS + 1];
 
-float    g_fRecord[4];
+float    g_fRecord[4];   // Server record for each track, and eventually each style
 
 char     g_sMapName[64];
 
@@ -73,12 +74,24 @@ public APLRes AskPluginLoad2(Handle plugin, bool late, char[] error, int err_max
     return APLRes_Success;
 }
 
+//=================================
+// Forwards
+//=================================
+
 public void OnMapStart()
 {
+    /**
+     * Get map name (ex: "bhop_<name>").
+    */
     char sMapNameTemp[128];
     GetCurrentMap(sMapNameTemp, sizeof(sMapNameTemp));
 
     GetMapDisplayName(sMapNameTemp, g_sMapName, sizeof(g_sMapName));
+
+    /**
+     * Get record for main and bonus track.
+     * TODO: Make this into a loop once styles are done
+    */
 
     GetMapRecord(Track_MainStart);
     GetMapRecord(Track_BonusStart);
@@ -87,14 +100,129 @@ public void OnMapStart()
 void OnClientPostAdminCheck(int client)
 {
     GetPlayerInfo(client);
+
+    /**
+     * Cancel any damage taken
+    */
     SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
 }
 
-// Cancel any damage taken
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype)
 {
     return Plugin_Handled;
 }
+
+public void OnPlayerLeaveZone(int client, int tick, int track)
+{
+    if (!IsPlayerAlive(client))
+    {
+        return;
+    }
+
+    /**
+     * Start timer if player left from track start
+    */
+
+    if (track == g_pInfo[client].iTrack)
+    {
+        g_pInfo[client].iStartTick = tick;
+        g_pInfo[client].bInRun = true;
+
+        Call_StartForward(g_hTimerStartForward);
+
+        Call_PushCell(client);
+        Call_PushCell(track);
+        Call_PushCell(tick);
+
+        Call_Finish();
+    }
+}
+
+public void OnPlayerTrackChange(int client)
+{
+    g_pInfo[client].iTrack = GetPlayerTrack(client);
+}
+
+public void OnPlayerEnterZone(int client, int tick, int track)
+{
+    /**
+     * If the player enters end zone for correct track
+    */
+
+    if (track == g_pInfo[client].iTrack + 1 && g_pInfo[client].bInRun)
+    {
+        char  sFormattedTime[64];
+        float fTime = (GetGameTickCount() - g_pInfo[client].iStartTick) * GetTickInterval();
+        float fOldTime = g_pInfo[client].fPb[g_pInfo[client].iTrack];
+
+        FormatSeconds(fTime, sFormattedTime, sizeof(sFormattedTime), true);
+
+        /**
+         * Should each be called separately?
+         * Ex: if a player beats the SR, should all
+         *     3 forwards be called?
+        */
+
+        if (fTime < g_fRecord[g_pInfo[client].iTrack] || g_fRecord[g_pInfo[client].iTrack] == 0.0)
+        {
+            /**
+             * Player beats SR
+            */
+
+            float fOldRecord = g_fRecord[g_pInfo[client].iTrack];
+
+            g_fRecord[g_pInfo[client].iTrack] = fTime;
+
+            Call_StartForward(g_hBeatSrForward);
+
+            Call_PushCell(client);
+            Call_PushCell(tick);
+            Call_PushFloat(fOldRecord);
+            Call_PushFloat(fTime);
+
+            Call_Finish();
+        }
+        else if (fTime < fOldTime || fOldTime == 0.0)
+        {
+            /**
+             * Player beats PB, but not SR
+            */
+
+            g_pInfo[client].fPb[g_pInfo[client].iTrack] = fTime;
+            SavePlayerTime(client);
+
+            Call_StartForward(g_hBeatPbForward);
+
+            Call_PushCell(client);
+            Call_PushCell(tick);
+            Call_PushFloat(fOldTime);
+            Call_PushFloat(fTime);
+
+            Call_Finish();
+        }
+        else
+        {
+            /**
+             * Player finishes track, but doesn't beat PB or SR
+            */
+
+            Call_StartForward(g_hFinishedTrackForward);
+
+            Call_PushCell(client);
+            Call_PushCell(g_pInfo[client].iTrack);
+            Call_PushFloat(fTime);
+            Call_PushFloat(g_pInfo[client].fPb[g_pInfo[client].iTrack]);
+
+            Call_Finish();
+        }
+
+        g_pInfo[client].bInRun = false;
+    }
+}
+
+//=================================
+// DB
+//=================================
 
 void SetupDB()
 {
@@ -128,18 +256,6 @@ void GetMapRecord(int track)
     Format(sQuery, sizeof(sQuery), "SELECT time, track FROM 'records' WHERE map = '%s' AND track = %i ORDER BY time ASC;", g_sMapName, track);
 
     g_hDB.Query(DB_GetRecordHandler, sQuery);
-}
-
-void GetPlayerInfo(int client)
-{
-    if (!IsValidClient(client))
-    {
-        return;
-    }
-
-    GetClientAuthId(client, AuthId_SteamID64, g_pInfo[client].sId64, 64);
-    
-    FindPb(client);
 }
 
 void SavePlayerTime(int client)
@@ -247,87 +363,25 @@ public void DB_GetRecordHandler(Database db, DBResultSet results, const char[] e
     }
 }
 
-public void OnPlayerLeaveZone(int client, int tick, int track)
+//=================================
+// Other
+//=================================
+
+void GetPlayerInfo(int client)
 {
-    if (!IsPlayerAlive(client))
+    if (!IsValidClient(client))
     {
         return;
     }
 
-    if (track == g_pInfo[client].iTrack)
-    {
-        g_pInfo[client].iStartTick = tick;
-        g_pInfo[client].bInRun = true;
-
-        Call_StartForward(g_hTimerStartForward);
-
-        Call_PushCell(client);
-        Call_PushCell(track);
-        Call_PushCell(tick);
-
-        Call_Finish();
-    }
+    GetClientAuthId(client, AuthId_SteamID64, g_pInfo[client].sId64, 64);
+    
+    FindPb(client);
 }
 
-public void OnPlayerTrackChange(int client)
-{
-    g_pInfo[client].iTrack = GetPlayerTrack(client);
-}
-
-public void OnPlayerEnterZone(int client, int tick, int track)
-{
-    if (track == g_pInfo[client].iTrack + 1 && g_pInfo[client].bInRun)
-    {
-        char  sFormattedTime[64];
-        float fTime = (GetGameTickCount() - g_pInfo[client].iStartTick) * GetTickInterval();
-        float fOldTime = g_pInfo[client].fPb[g_pInfo[client].iTrack];
-
-        FormatSeconds(fTime, sFormattedTime, sizeof(sFormattedTime), true);
-
-        if (fTime < g_fRecord[g_pInfo[client].iTrack] || g_fRecord[g_pInfo[client].iTrack] == 0.0) // Player beats sr
-        {
-            float fOldRecord = g_fRecord[g_pInfo[client].iTrack];
-
-            g_fRecord[g_pInfo[client].iTrack] = fTime;
-
-            Call_StartForward(g_hBeatSrForward);
-
-            Call_PushCell(client);
-            Call_PushCell(tick);
-            Call_PushFloat(fOldRecord);
-            Call_PushFloat(fTime);
-
-            Call_Finish();
-        }
-        else if (fTime < fOldTime || fOldTime == 0.0) // Player beats pb, but not sr
-        {
-            g_pInfo[client].fPb[g_pInfo[client].iTrack] = fTime;
-            SavePlayerTime(client);
-
-            Call_StartForward(g_hBeatPbForward);
-
-            Call_PushCell(client);
-            Call_PushCell(tick);
-            Call_PushFloat(fOldTime);
-            Call_PushFloat(fTime);
-
-            Call_Finish();
-        }
-        else // Player doesn't beat pb or sr, but finishes the track
-        {
-            Call_StartForward(g_hFinishedTrackForward);
-
-            Call_PushCell(client);
-            Call_PushCell(g_pInfo[client].iTrack);
-            Call_PushFloat(fTime);
-            Call_PushFloat(g_pInfo[client].fPb[g_pInfo[client].iTrack]);
-
-            Call_Finish();
-        }
-
-        g_pInfo[client].bInRun = false;
-    }
-}
+//=================================
+// Natives
+//=================================
 
 public int Native_StopTimer(Handle plugin, int param)
 {
