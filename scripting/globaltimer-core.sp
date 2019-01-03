@@ -10,8 +10,7 @@ enum struct PlayerTimerInfo
     bool  bInRun;        // Whether or not timer is running
     int   iTrack;        // Track player is running on
     int   iStartTick;    // Tick player left the start zone
-    float fPb[4];        // Pb (in seconds) for each track (only 0 and 2 are used, but size is 4
-                         //                                 so arrays line up easier)
+    float fPb[4];        // Pb (in seconds) for each track (only 0 and 2 are used, but size is 4 so arrays line up easier)
 }
 
 PlayerTimerInfo g_pInfo[MAXPLAYERS + 1];
@@ -168,7 +167,7 @@ public void OnPlayerEnterZone(int client, int tick, int track)
             /**
              * Player beats SR
             */
-
+            
             float fOldRecord = g_fRecord[g_pInfo[client].iTrack];
 
             g_fRecord[g_pInfo[client].iTrack] = fTime;
@@ -182,10 +181,11 @@ public void OnPlayerEnterZone(int client, int tick, int track)
 
             Call_Finish();
         }
-        else if (fTime < fOldTime || fOldTime == 0.0)
+
+        if (fTime < fOldTime || fOldTime == 0.0)
         {
             /**
-             * Player beats PB, but not SR
+             * Player beats PB
             */
 
             g_pInfo[client].fPb[g_pInfo[client].iTrack] = fTime;
@@ -203,7 +203,7 @@ public void OnPlayerEnterZone(int client, int tick, int track)
         else
         {
             /**
-             * Player finishes track, but doesn't beat PB or SR
+             * Player finishes track, but doesn't beat PB
             */
 
             Call_StartForward(g_hFinishedTrackForward);
@@ -255,7 +255,7 @@ void GetMapRecord(int track)
 
     Format(sQuery, sizeof(sQuery), "SELECT time, track FROM 'records' WHERE map = '%s' AND track = %i ORDER BY time ASC;", g_sMapName, track);
 
-    g_hDB.Query(DB_GetRecordHandler, sQuery);
+    g_hDB.Query(DB_GetRecordHandler, sQuery, track);
 }
 
 void SavePlayerTime(int client)
