@@ -268,14 +268,14 @@ stock void FormatSeconds(float time, char[] output, int size, bool accurate)
     if (iHours > 0)
     {
         // Fuck you I like ternary operators.
-        Format(output, size, accurate ? "%s%i:%s%i:%s%.3f" : "%s%i:%s%i:%s%.1f", (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10) ? "0" : "", iSeconds);
+        Format(output, size, accurate ? "%s%i:%s%i:%s%.3fs" : "%s%i:%s%i:%s%.1fs", (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10) ? "0" : "", iSeconds);
     }
     else if (iMinutes > 0)
     {
-        Format(output, size, accurate ? "%s%i:%s%.3f" : "%s%i:%s%.1f", (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10.0) ? "0" : "", iSeconds);
+        Format(output, size, accurate ? "%s%i:%s%.3fs" : "%s%i:%s%.1fs", (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10.0) ? "0" : "", iSeconds);
     }
     else
     {
-        Format(output, size, accurate ? "%s%.3f" : "%s%.1f", (iSeconds < 10) ? "0" : "", iSeconds);
+        Format(output, size, accurate ? "%s%.3fs" : "%s%.1fs", (iSeconds < 10) ? "0" : "", iSeconds);
     }
 }
