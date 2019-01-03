@@ -1,4 +1,4 @@
-Current plans:
+#Current plans:
 
 Finish commenting current stuff.
 Timer messages (including cfg for changing styling of messages)
