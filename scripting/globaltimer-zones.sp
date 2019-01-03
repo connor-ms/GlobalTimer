@@ -67,7 +67,7 @@ int g_iTrackColors[][] =
 public Plugin myinfo =
 {
     name = "[GlobalTimer] Zones",
-    author = AUTHOR,
+    author = "Connor",
     description = "Zones for timer.",
     version = VERSION,
     url = URL
@@ -117,11 +117,11 @@ public void OnPluginStart()
 public APLRes AskPluginLoad2(Handle plugin, bool late, char[] error, int err_max)
 {
     g_bLate = late;
+    
+    RegPluginLibrary("globaltimer_zones");
 
     CreateNative("IsPlayerInZone", Native_IsPlayerInZone);
     CreateNative("GetPlayerTrack", Native_GetPlayerTrack);
-
-    RegPluginLibrary("globaltimer_zones");
 
     return APLRes_Success;
 }

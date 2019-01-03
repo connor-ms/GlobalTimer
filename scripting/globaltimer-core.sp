@@ -33,7 +33,7 @@ Handle   g_hTimerStartForward;
 public Plugin myinfo =
 {
     name = "[GlobalTimer] Core",
-    author = AUTHOR,
+    author = "Connor",
     description = "CS:GO bhop timer.",
     version = VERSION,
     url = URL
@@ -64,12 +64,12 @@ public void OnPluginStart()
 public APLRes AskPluginLoad2(Handle plugin, bool late, char[] error, int err_max)
 {
     g_bLate = late;
+    
+    RegPluginLibrary("globaltimer_core");
 
     CreateNative("StopTimer", Native_StopTimer);
     CreateNative("GetPlayerStartTick", Native_GetPlayerStartTick);
     CreateNative("IsPlayerInRun", Native_IsPlayerInRun);
-
-    RegPluginLibrary("globaltimer_core");
 
     return APLRes_Success;
 }

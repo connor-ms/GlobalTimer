@@ -4,7 +4,6 @@
 #define _globaltimer_include_
 
 #define VERSION "0.01a"
-#define AUTHOR  "Connor"
 #define URL     "www.steamcommunity.com/id/connorms"
 
 /*
