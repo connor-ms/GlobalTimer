@@ -7,17 +7,18 @@
 #pragma newdecls required
 
 #define DEFAULT_ZONE_HEIGHT   140
+#define DEFAULT_GRID_SIZE     64
 #define TIMER_ZONE_UPDATERATE 1.0
 #define MAXZONES              4
 
 enum struct PlayerZoneInfo
 {
-    bool   bIsCreatingZone;
-    int    iInZone;              // -1 if not in zone, otherwise zone index (0 -> 3)
-    int    iCurrentTrack;
-    int    iEditingTrack;
-    Handle hZoneTimer;
-    Handle hSnapTimer;
+    bool   bIsCreatingZone;    // If the player is in the creating zone menu.
+    int    iInZone;            // Index of the zone the player is in (-1 if not in one).
+    int    iCurrentTrack;      // Index of current track (see enum in include file).
+    int    iEditingTrack;      // Chosen track to be edited in create zone menu (^).
+    Handle hZoneTimer;         // Timer for drawing zones.
+    Handle hSnapTimer;         // Timer for updating snap pos.
 }
 
 PlayerZoneInfo g_pInfo[MAXPLAYERS + 1];
@@ -35,7 +36,7 @@ bool   g_bIsZoneValid[MAXZONES];
 bool   g_bHasCustomSpawn[MAXPLAYERS + 1][2];
 
 int    g_iBeam;
-int    g_iSnapSize = 64;
+int    g_iSnapSize = DEFAULT_GRID_SIZE;
 int    g_iTrigger[MAXZONES];
 
 char   g_sMapName[128];
@@ -75,8 +76,9 @@ public Plugin myinfo =
 public void OnPluginStart()
 {
     g_bDBLoaded = false;
-    g_hZoneLeaveForward = CreateGlobalForward("OnPlayerLeaveZone", ET_Event, Param_Cell, Param_Cell, Param_Cell);
-    g_hZoneEnterForward = CreateGlobalForward("OnPlayerEnterZone", ET_Event, Param_Cell, Param_Cell, Param_Cell);
+
+    g_hZoneLeaveForward         = CreateGlobalForward("OnPlayerLeaveZone",   ET_Event, Param_Cell, Param_Cell, Param_Cell);
+    g_hZoneEnterForward         = CreateGlobalForward("OnPlayerEnterZone",   ET_Event, Param_Cell, Param_Cell, Param_Cell);
     g_hPlayerTrackChangeForward = CreateGlobalForward("OnPlayerTrackChange", ET_Event, Param_Cell);
 
     // Admin commands
@@ -96,7 +98,6 @@ public void OnPluginStart()
     RegConsoleCmd("sm_s",     CMD_Main,  "Teleports player to main track.");
     RegConsoleCmd("sm_m",     CMD_Main,  "Teleports player to main track.");
 
-    HookEvent("player_team", OnTeamJoin);
     HookEvent("round_start", OnRoundStart);
 
     SetupDB();
@@ -113,6 +114,15 @@ public void OnPluginStart()
     }
 }
 
+// Just for testing stuff without making another plugin
+public void OnPlayerBeatSr(int client, int track, float oldtime, float newtime)
+{
+    PrintToChatAll("NEW RECORD!!!");
+    PrintToChatAll("NEW RECORD!!!");
+    PrintToChatAll("NEW RECORD!!!");
+}
+
+// ^
 public void OnPlayerBeatPb(int client, int track, float oldtime, float newtime)
 {
     char sName[64];
@@ -134,6 +144,7 @@ public void OnPlayerBeatPb(int client, int track, float oldtime, float newtime)
     }
 }
 
+// ^
 public void OnPlayerFinishedTrack(int client, int track, float time, float pb)
 {
     char sName[64];
@@ -168,21 +179,23 @@ public Action OnPlayerRunCmd(int client, int& buttons, int& impulse, float vel[3
 
 public void OnClientConnected(int client)
 {
+    /*
+     * Start the timer for drawing zones when a client connects,
+     * since it should be constantly running.
+    */
     g_pInfo[client].hZoneTimer = CreateTimer(TIMER_ZONE_UPDATERATE, DrawZoneLoop, client, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public void OnClientDisconnect(int client)
 {
-    ClearTimer(g_pInfo[client].hZoneTimer);
-}
-
-public Action OnTeamJoin(Event event, const char[] name, bool broadcast)
-{
-    return Plugin_Continue;
+    ClearPlayerInfo(client);
 }
 
 public Action OnRoundStart(Event event, const char[] name, bool broadcast)
 {
+    /**
+     * Loop through all valid zones and create trigger entity for them.
+    */
     for (int i = 0; i < MAXZONES; i++)
     {
         if (g_bIsZoneValid[i])
@@ -194,19 +207,39 @@ public Action OnRoundStart(Event event, const char[] name, bool broadcast)
 
 public void OnMapStart()
 {
+    /**
+     * Get map name (ex: "bhop_<name>").
+    */
     char sMapNameTemp[128];
     GetCurrentMap(sMapNameTemp, sizeof(sMapNameTemp));
 
     GetMapDisplayName(sMapNameTemp, g_sMapName, sizeof(g_sMapName));
 
+    /**
+     * Precache models.
+    */
     g_iBeam = PrecacheModel("materials/sprites/purplelaser1.vmt", true);
     PrecacheModel("models/props/cs_office/vending_machine.mdl", true);
 
     LoadZones();
 }
 
+void ClearPlayerInfo(int client)
+{
+    g_pInfo[client].bIsCreatingZone = false;
+    g_pInfo[client].iInZone         = -1;
+    g_pInfo[client].iCurrentTrack   = Track_MainStart;
+    g_pInfo[client].iEditingTrack   = Track_MainStart;
+    
+    ClearTimer(g_pInfo[client].hZoneTimer);
+    ClearTimer(g_pInfo[client].hSnapTimer);
+}
+
 void SetupDB()
 {
+    /**
+     * Setup and connect to temp database settings.
+    */
     Handle hKeyValues = CreateKeyValues("Connection");
     char   sError[128];
 
@@ -250,6 +283,7 @@ void SaveZones(int client)
     g_hDB.Query(DB_CreateZoneHandler, sQuery, client);
 }
 
+
 void LoadZones()
 {
     if (!g_bDBLoaded || g_hDB == null)
@@ -257,6 +291,9 @@ void LoadZones()
         return;
     }
 
+    /**
+     * Query db for zone points.
+    */
     char sQuery[256];
 
     Format(sQuery, sizeof(sQuery), "SELECT * FROM 'zones' WHERE map = '%s'", g_sMapName);
@@ -301,6 +338,10 @@ public void DB_CreateZoneHandler(Database db, DBResultSet results, const char[] 
         return;
     }
 
+    /**
+     * If there are no zones setup already, create a new row for it, otherwise
+     * overwrite the current zone.
+    */
     if (results.RowCount == 0)
     {
         CreateZoneRow(client);
@@ -323,11 +364,18 @@ public void DB_LoadZoneHandler(Database db, DBResultSet results, const char[] er
 
     int iLoadingTrack;
 
+    /**
+     * If there are no zones to load, don't continue.
+    */
     if (results.RowCount == 0)
     {
         return;
     }
 
+    /**
+     * Get important points from db for each zone, and calculate the rest of the points,
+     * then create the trigger for it.
+    */
     while (results.FetchRow())
     {
         iLoadingTrack = results.FetchInt(2);
@@ -340,8 +388,9 @@ public void DB_LoadZoneHandler(Database db, DBResultSet results, const char[] er
         g_fZonePoints[iLoadingTrack][2][1] = results.FetchFloat(6);
         g_fZonePoints[iLoadingTrack][2][2] = results.FetchFloat(7);
 
-        SetupZonePoints(g_fZonePoints[iLoadingTrack]);
         g_bIsZoneValid[iLoadingTrack] = true;
+        
+        SetupZonePoints(g_fZonePoints[iLoadingTrack]);
         CreateTrigger(iLoadingTrack);
     }
 }
@@ -354,6 +403,10 @@ public void DB_RemoveZoneHandler(Database db, DBResultSet results, const char[] 
         return;
     }
 
+    /**
+     * There should never be more than 1 row for this query so something
+     * is fucked if there is.
+    */
     if (results.RowCount != 1)
     {
         return;
@@ -361,13 +414,17 @@ public void DB_RemoveZoneHandler(Database db, DBResultSet results, const char[] 
 
     char sQuery[256];
     int  iRowId;
+    int  iTrack;
 
     while (results.FetchRow())
     {
         iRowId = results.FetchInt(0);
+        iTrack = results.FetchInt(2);
 
         Format(sQuery, sizeof(sQuery), "DELETE FROM 'zones' WHERE id = %i", iRowId);
         g_hDB.Query(DB_ErrorHandler, sQuery, _);
+
+        g_bIsZoneValid[iTrack] = false;
     }
 }
 

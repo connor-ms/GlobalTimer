@@ -1,6 +1,7 @@
 #include <globaltimer>
 
 #include <sourcemod>
+#include <sdkhooks>
 #include <sdktools>
 
 enum struct PlayerTimerInfo
@@ -23,11 +24,12 @@ Database g_hDB;
 bool     g_bLate;
 bool     g_bDBLoaded;
 
+Handle   g_hBeatSrForward;
 Handle   g_hBeatPbForward;
 Handle   g_hFinishedTrackForward;
 Handle   g_hTimerStartForward;
 
-public Plugin myinfo = 
+public Plugin myinfo =
 {
     name = "[GlobalTimer] Core",
     author = AUTHOR,
@@ -39,11 +41,10 @@ public Plugin myinfo =
 public void OnPluginStart()
 {
     g_bDBLoaded = false;
+    g_hBeatSrForward        = CreateGlobalForward("OnPlayerBeatSr",        ET_Event, Param_Cell, Param_Cell, Param_Float, Param_Float);
     g_hBeatPbForward        = CreateGlobalForward("OnPlayerBeatPb",        ET_Event, Param_Cell, Param_Cell, Param_Float, Param_Float);
-    g_hFinishedTrackForward = CreateGlobalForward("OnPlayerFinishedTrack", ET_Event, Param_Cell, Param_Cell, Param_Float, Param_Float);
     g_hTimerStartForward    = CreateGlobalForward("OnPlayerTimerStart",    ET_Event, Param_Cell, Param_Cell, Param_Cell);
-
-    AddCommandListener(OnTeamJoin, "jointeam");
+    g_hFinishedTrackForward = CreateGlobalForward("OnPlayerFinishedTrack", ET_Event, Param_Cell, Param_Cell, Param_Float, Param_Float);
 
     SetupDB();
 
@@ -53,7 +54,7 @@ public void OnPluginStart()
         {
             if (IsClientConnected(i))
             {
-                OnTeamJoin(i, "", 0);
+                OnClientPostAdminCheck(i);
             }
         }
     }
@@ -83,11 +84,16 @@ public void OnMapStart()
     GetMapRecord(Track_BonusStart);
 }
 
-public Action OnTeamJoin(int client, const char[] command, int args)
+void OnClientPostAdminCheck(int client)
 {
     GetPlayerInfo(client);
+    SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
+}
 
-    return Plugin_Continue;
+// Cancel any damage taken
+public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype)
+{
+    return Plugin_Handled;
 }
 
 void SetupDB()
@@ -278,7 +284,22 @@ public void OnPlayerEnterZone(int client, int tick, int track)
 
         FormatSeconds(fTime, sFormattedTime, sizeof(sFormattedTime), true);
 
-        if (fTime < fOldTime || fOldTime == 0.0) // Player beats pb, but not sr
+        if (fTime < g_fRecord[g_pInfo[client].iTrack] || g_fRecord[g_pInfo[client].iTrack] == 0.0) // Player beats sr
+        {
+            float fOldRecord = g_fRecord[g_pInfo[client].iTrack];
+
+            g_fRecord[g_pInfo[client].iTrack] = fTime;
+
+            Call_StartForward(g_hBeatSrForward);
+
+            Call_PushCell(client);
+            Call_PushCell(tick);
+            Call_PushFloat(fOldRecord);
+            Call_PushFloat(fTime);
+
+            Call_Finish();
+        }
+        else if (fTime < fOldTime || fOldTime == 0.0) // Player beats pb, but not sr
         {
             g_pInfo[client].fPb[g_pInfo[client].iTrack] = fTime;
             SavePlayerTime(client);
