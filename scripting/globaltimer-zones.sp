@@ -21,7 +21,7 @@ enum struct PlayerZoneInfo
     Handle hSnapTimer;         // Timer for updating snap pos.
 }
 
-PlayerZoneInfo g_pInfo[MAXPLAYERS + 1];
+PlayerZoneInfo g_eInfo[MAXPLAYERS + 1];
 
 float  g_fSpawnPoint[MAXPLAYERS + 1][2][3];
 float  g_fSpawnAngles[MAXPLAYERS + 1][2][3];
@@ -143,7 +143,7 @@ public void OnClientConnected(int client)
      * Start the timer for drawing zones when a client connects,
      * since it should be constantly running.
     */
-    g_pInfo[client].hZoneTimer = CreateTimer(TIMER_ZONE_UPDATERATE, DrawZoneLoop, client, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+    g_eInfo[client].hZoneTimer = CreateTimer(TIMER_ZONE_UPDATERATE, DrawZoneLoop, client, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public void OnClientDisconnect(int client)
@@ -197,7 +197,7 @@ public void OnStartTouch(int entity, int other)
 
             if (IsValidClient(other))
             {
-                g_pInfo[other].iInZone = i;
+                g_eInfo[other].iInZone = i;
             }
 
             break;
@@ -221,7 +221,7 @@ public void OnEndTouch(int entity, int other)
 
             if (IsValidClient(other))
             {
-                g_pInfo[other].iInZone = -1;
+                g_eInfo[other].iInZone = -1;
             }
 
             break;
@@ -248,7 +248,7 @@ void SetupDB()
 
     if (g_hDB == null)
     {
-        SetFailState("%s Error connecting to db (%s)", PREFIX, sError);
+        SetFailState("%s Error connecting to db (%s)", g_sPrefix, sError);
         CloseHandle(g_hDB);
         return;
     }
@@ -256,7 +256,7 @@ void SetupDB()
     g_hDB.Query(DB_ErrorHandler, "CREATE TABLE IF NOT EXISTS zones(id INTEGER PRIMARY KEY, map TEXT, track INTEGER, point1x REAL, point1y REAL, point2x REAL, point2y REAL, height REAL);", _);
 
     g_bDBLoaded = true;
-    PrintToServer("%s Zone database successfully loaded!", PREFIX);
+    PrintToServer("%s Zone database successfully loaded!", g_sPrefix);
 
     CloseHandle(hKeyValues);
 }
@@ -265,7 +265,7 @@ void SaveZones(int client)
 {
     if (!g_bDBLoaded)
     {
-        PrintToChat(client, "%s \x02ERROR: \x07Database not loaded. Cannot save zone!", PREFIX);
+        PrintToChat(client, "%s \x02ERROR: \x07Database not loaded. Cannot save zone!", g_sPrefix);
         return;
     }
 
@@ -273,14 +273,14 @@ void SaveZones(int client)
      * Make sure zone points are set up, then save to db.
     */
 
-    g_bIsZoneValid[g_pInfo[client].iEditingTrack] = true;
+    g_bIsZoneValid[g_eInfo[client].iEditingTrack] = true;
 
-    SetupZonePoints(g_fZonePoints[g_pInfo[client].iEditingTrack]);
-    CreateTrigger(g_pInfo[client].iEditingTrack);
+    SetupZonePoints(g_fZonePoints[g_eInfo[client].iEditingTrack]);
+    CreateTrigger(g_eInfo[client].iEditingTrack);
 
     char sQuery[256];
 
-    Format(sQuery, sizeof(sQuery), "SELECT * FROM 'zones' WHERE map = '%s' AND track = %i", g_sMapName, g_pInfo[client].iEditingTrack);
+    Format(sQuery, sizeof(sQuery), "SELECT * FROM 'zones' WHERE map = '%s' AND track = %i", g_sMapName, g_eInfo[client].iEditingTrack);
 
     g_hDB.Query(DB_CreateZoneHandler, sQuery, client);
 }
@@ -308,7 +308,7 @@ void CreateZoneRow(int client)
 {
     char sQuery[256];
 
-    Format(sQuery, sizeof(sQuery), "INSERT INTO zones(map, track, point1x, point1y, point2x, point2y, height) VALUES ('%s', %i, %f, %f, %f, %f, %f)", g_sMapName, g_pInfo[client].iEditingTrack, g_fZonePoints[g_pInfo[client].iEditingTrack][0][0], g_fZonePoints[g_pInfo[client].iEditingTrack][0][1], g_fZonePoints[g_pInfo[client].iEditingTrack][2][0], g_fZonePoints[g_pInfo[client].iEditingTrack][2][1], g_fZonePoints[g_pInfo[client].iEditingTrack][0][2]);
+    Format(sQuery, sizeof(sQuery), "INSERT INTO zones(map, track, point1x, point1y, point2x, point2y, height) VALUES ('%s', %i, %f, %f, %f, %f, %f)", g_sMapName, g_eInfo[client].iEditingTrack, g_fZonePoints[g_eInfo[client].iEditingTrack][0][0], g_fZonePoints[g_eInfo[client].iEditingTrack][0][1], g_fZonePoints[g_eInfo[client].iEditingTrack][2][0], g_fZonePoints[g_eInfo[client].iEditingTrack][2][1], g_fZonePoints[g_eInfo[client].iEditingTrack][0][2]);
 
     g_hDB.Query(DB_ErrorHandler, sQuery, _);
 }
@@ -317,7 +317,7 @@ void UpdateZoneRow(int id, int client)
 {
     char sQuery[256];
 
-    Format(sQuery, sizeof(sQuery), "UPDATE zones SET point1x = %f, point1y = %f, point2x = %f, point2y = %f, height = %f WHERE id = %i", g_fZonePoints[g_pInfo[client].iEditingTrack][0][0], g_fZonePoints[g_pInfo[client].iEditingTrack][0][1], g_fZonePoints[g_pInfo[client].iEditingTrack][2][0], g_fZonePoints[g_pInfo[client].iEditingTrack][2][1], g_fZonePoints[g_pInfo[client].iEditingTrack][0][2], id);
+    Format(sQuery, sizeof(sQuery), "UPDATE zones SET point1x = %f, point1y = %f, point2x = %f, point2y = %f, height = %f WHERE id = %i", g_fZonePoints[g_eInfo[client].iEditingTrack][0][0], g_fZonePoints[g_eInfo[client].iEditingTrack][0][1], g_fZonePoints[g_eInfo[client].iEditingTrack][2][0], g_fZonePoints[g_eInfo[client].iEditingTrack][2][1], g_fZonePoints[g_eInfo[client].iEditingTrack][0][2], id);
 
     g_hDB.Query(DB_ErrorHandler, sQuery, _);
 }
@@ -337,7 +337,7 @@ public void DB_CreateZoneHandler(Database db, DBResultSet results, const char[] 
 
     if (db == null || results == null)
     {
-        SetFailState("%s DB error. (%s)", PREFIX, error);
+        SetFailState("%s DB error. (%s)", g_sPrefix, error);
         return;
     }
 
@@ -355,14 +355,14 @@ public void DB_CreateZoneHandler(Database db, DBResultSet results, const char[] 
         UpdateZoneRow(results.FetchInt(0), client);
     }
 
-    PrintToChat(client, "%s Successfully created zone!", PREFIX);
+    PrintToChat(client, "%s Successfully created zone!", g_sPrefix);
 }
 
 public void DB_LoadZoneHandler(Database db, DBResultSet results, const char[] error, any data)
 {
     if (db == null || results == null)
     {
-        SetFailState("%s DB error. (%s)", PREFIX, error);
+        SetFailState("%s DB error. (%s)", g_sPrefix, error);
         return;
     }
 
@@ -449,9 +449,9 @@ public Action DrawGridSnap(Handle timer, int client)
      * stop drawing the grid snap.
     */
 
-    if (!g_pInfo[client].bIsCreatingZone && IsValidClient(client))
+    if (!g_eInfo[client].bIsCreatingZone && IsValidClient(client))
     {
-        ClearTimer(g_pInfo[client].hSnapTimer);
+        ClearTimer(g_eInfo[client].hSnapTimer);
         return Plugin_Stop;
     }
 
@@ -497,8 +497,8 @@ public int MenuHandler_Zone(Menu menu, MenuAction action, int client, int index)
 
         if (StrEqual(sInfo, "create"))
         {
-            g_pInfo[client].bIsCreatingZone = true;
-            g_pInfo[client].hSnapTimer = CreateTimer(0.1, DrawGridSnap, client, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+            g_eInfo[client].bIsCreatingZone = true;
+            g_eInfo[client].hSnapTimer = CreateTimer(0.1, DrawGridSnap, client, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 
             DisplayCreateZoneMenu(client);
         }
@@ -540,7 +540,7 @@ public int MenuHandler_CreateZone(Menu menu, MenuAction action, int client, int 
         if (iPoint != -1)
         {
             g_fSelectedPoints[client][iPoint] = g_fSnapPoint[client];
-            PrintToChat(client, "%s Set point %i at (%.0f, %.0f, %.0f).", PREFIX, iPoint + 1, (g_fSelectedPoints[client][iPoint][0]), (g_fSelectedPoints[client][iPoint][1]), (g_fSelectedPoints[client][iPoint][2]));
+            PrintToChat(client, "%s Set point %i at (%.0f, %.0f, %.0f).", g_sPrefix, iPoint + 1, (g_fSelectedPoints[client][iPoint][0]), (g_fSelectedPoints[client][iPoint][1]), (g_fSelectedPoints[client][iPoint][2]));
         }
 
         if (StrEqual(sInfo, "save"))
@@ -549,8 +549,8 @@ public int MenuHandler_CreateZone(Menu menu, MenuAction action, int client, int 
              * Setup and save new zone points from new positions.
             */
 
-            g_fZonePoints[g_pInfo[client].iEditingTrack][0] = g_fSelectedPoints[client][0];
-            g_fZonePoints[g_pInfo[client].iEditingTrack][2] = g_fSelectedPoints[client][1];
+            g_fZonePoints[g_eInfo[client].iEditingTrack][0] = g_fSelectedPoints[client][0];
+            g_fZonePoints[g_eInfo[client].iEditingTrack][2] = g_fSelectedPoints[client][1];
             SaveZones(client);
         }
         else if (StrEqual(sInfo, "snap"))
@@ -570,21 +570,21 @@ public int MenuHandler_CreateZone(Menu menu, MenuAction action, int client, int 
              * Change editing track. If it's over 4 set it back down to 0.
             */
 
-            g_pInfo[client].iEditingTrack++;
+            g_eInfo[client].iEditingTrack++;
             
-            g_pInfo[client].iEditingTrack %= 4;
+            g_eInfo[client].iEditingTrack %= 4;
         }
         
         DisplayCreateZoneMenu(client);
     }
     else if (action == MenuAction_Cancel && index == MenuCancel_ExitBack)
     {
-        g_pInfo[client].bIsCreatingZone = false;
+        g_eInfo[client].bIsCreatingZone = false;
         DisplayParentZoneMenu(client);
     }
     else if (action == MenuAction_Cancel)
     {
-        g_pInfo[client].bIsCreatingZone = false;
+        g_eInfo[client].bIsCreatingZone = false;
     }
     else
     {
@@ -625,7 +625,7 @@ public int MenuHandler_RemoveZone(Menu menu, MenuAction action, int client, int 
                  * If it is, confirm that the player wants to delete the zone.
                 */
 
-                g_pInfo[client].iEditingTrack = i;
+                g_eInfo[client].iEditingTrack = i;
 
                 DisplayConfirmMenu(client);
 
@@ -664,15 +664,15 @@ public int MenuHandler_Confirm(Menu menu, MenuAction action, int client, int ind
              * If the player confirms deletion, remove zone from db and delete the trigger for entering/exiting.
             */
 
-            RemoveZoneRow(g_pInfo[client].iEditingTrack);
-            g_bIsZoneValid[g_pInfo[client].iEditingTrack] = false;
+            RemoveZoneRow(g_eInfo[client].iEditingTrack);
+            g_bIsZoneValid[g_eInfo[client].iEditingTrack] = false;
 
-            if (IsValidEntity(g_iTrigger[g_pInfo[client].iEditingTrack]))
+            if (IsValidEntity(g_iTrigger[g_eInfo[client].iEditingTrack]))
             {
-                RemoveEntity(g_iTrigger[g_pInfo[client].iEditingTrack]);
+                RemoveEntity(g_iTrigger[g_eInfo[client].iEditingTrack]);
             }
 
-            PrintToChat(client, "%s Succesfully removed track '%s'", PREFIX, g_sTrackNames[g_pInfo[client].iEditingTrack]);
+            PrintToChat(client, "%s Succesfully removed track '%s'", g_sPrefix, g_sTrackNames[g_eInfo[client].iEditingTrack]);
         }
         
         DisplayRemoveZoneMenu(client);
@@ -720,7 +720,7 @@ void DisplayCreateZoneMenu(int client)
     hMenu.AddItem("save", "Save\n ");
     hMenu.AddItem("snap", sText);
 
-    Format(sText, sizeof(sText), "Track: %s", g_sTrackNames[g_pInfo[client].iEditingTrack]);
+    Format(sText, sizeof(sText), "Track: %s", g_sTrackNames[g_eInfo[client].iEditingTrack]);
 
     hMenu.AddItem("track", sText);
     hMenu.ExitButton = true;
@@ -767,7 +767,7 @@ void DisplayConfirmMenu(int client)
 {
     char sTitle[64];
 
-    Format(sTitle, sizeof(sTitle), "Confirm deletion of:\n'%s'?", g_sTrackNames[g_pInfo[client].iEditingTrack]);
+    Format(sTitle, sizeof(sTitle), "Confirm deletion of:\n'%s'?", g_sTrackNames[g_eInfo[client].iEditingTrack]);
 
     Menu hMenu = new Menu(MenuHandler_Confirm);
 
@@ -795,7 +795,7 @@ public Action CMD_Zone(int client, int args)
 
 public Action CMD_Reset(int client, int args)
 {
-    if (!g_bIsZoneValid[g_pInfo[client].iCurrentTrack])
+    if (!g_bIsZoneValid[g_eInfo[client].iCurrentTrack])
     {
         /**
          * If the bonus zone got deleted while they were on it, try to send them back
@@ -803,15 +803,15 @@ public Action CMD_Reset(int client, int args)
          * If there is no main zone let them know.
         */
 
-        if (g_pInfo[client].iCurrentTrack == Track_BonusStart)
+        if (g_eInfo[client].iCurrentTrack == Track_BonusStart)
         {
-            g_pInfo[client].iCurrentTrack = Track_MainStart;
+            g_eInfo[client].iCurrentTrack = Track_MainStart;
             CMD_Reset(client, 0);
             return Plugin_Handled;
         }
         else
         {
-            PrintToChat(client, "%s No track found on map '%s'.", PREFIX, g_sMapName);
+            PrintToChat(client, "%s No track found on map '%s'.", g_sPrefix, g_sMapName);
             return Plugin_Handled;
         }
     }
@@ -828,14 +828,14 @@ public Action CMD_Reset(int client, int args)
      * Yeah it's stupid I know but it was easier than redoing both the arrays.
     */
 
-    if (g_bHasCustomSpawn[client][g_pInfo[client].iCurrentTrack / 2])
+    if (g_bHasCustomSpawn[client][g_eInfo[client].iCurrentTrack / 2])
     {
-        TeleportEntity(client, g_fSpawnPoint[client][g_pInfo[client].iCurrentTrack / 2], g_fSpawnAngles[client][g_pInfo[client].iCurrentTrack / 2], { 0.0, 0.0, 0.0 });
+        TeleportEntity(client, g_fSpawnPoint[client][g_eInfo[client].iCurrentTrack / 2], g_fSpawnAngles[client][g_eInfo[client].iCurrentTrack / 2], { 0.0, 0.0, 0.0 });
     }
     else
     {
         float fOrigin[3];
-        vecavg(fOrigin, g_fZonePoints[g_pInfo[client].iCurrentTrack][0], g_fZonePoints[g_pInfo[client].iCurrentTrack][2]);
+        vecavg(fOrigin, g_fZonePoints[g_eInfo[client].iCurrentTrack][0], g_fZonePoints[g_eInfo[client].iCurrentTrack][2]);
         TeleportEntity(client, fOrigin, NULL_VECTOR, { 0.0, 0.0, 0.0 });
     }
 
@@ -846,13 +846,13 @@ public Action CMD_Main(int client, int args)
 {
     if (!g_bIsZoneValid[Track_MainStart])
     {
-        PrintToChat(client, "%s No track found on map '%s'.", PREFIX, g_sMapName);
+        PrintToChat(client, "%s No track found on map '%s'.", g_sPrefix, g_sMapName);
         return Plugin_Handled;
     }
 
-    int iPreviousTrack = g_pInfo[client].iCurrentTrack;
+    int iPreviousTrack = g_eInfo[client].iCurrentTrack;
 
-    g_pInfo[client].iCurrentTrack = Track_MainStart;
+    g_eInfo[client].iCurrentTrack = Track_MainStart;
 
     /**
      * If the player switched from a different track
@@ -876,13 +876,13 @@ public Action CMD_Bonus(int client, int args)
 {
     if (!g_bIsZoneValid[Track_BonusStart])
     {
-        PrintToChat(client, "%s No bonus found on map '%s'.", PREFIX, g_sMapName);
+        PrintToChat(client, "%s No bonus found on map '%s'.", g_sPrefix, g_sMapName);
         return Plugin_Handled;
     }
 
-    int iPreviousTrack = g_pInfo[client].iCurrentTrack;
+    int iPreviousTrack = g_eInfo[client].iCurrentTrack;
 
-    g_pInfo[client].iCurrentTrack = Track_BonusStart;
+    g_eInfo[client].iCurrentTrack = Track_BonusStart;
 
     /**
      * If the player is switching from a different track
@@ -910,9 +910,9 @@ public Action CMD_End(int client, int args)
      * end track.
     */
 
-    if (!g_bIsZoneValid[g_pInfo[client].iCurrentTrack + 1])
+    if (!g_bIsZoneValid[g_eInfo[client].iCurrentTrack + 1])
     {
-        PrintToChat(client, "%s No end found for current track.", PREFIX);
+        PrintToChat(client, "%s No end found for current track.", g_sPrefix);
         return Plugin_Handled;
     }
     
@@ -920,7 +920,7 @@ public Action CMD_End(int client, int args)
 
     float fOrigin[3];
 
-    vecavg(fOrigin, g_fZonePoints[g_pInfo[client].iCurrentTrack + 1][0], g_fZonePoints[g_pInfo[client].iCurrentTrack + 1][2]);
+    vecavg(fOrigin, g_fZonePoints[g_eInfo[client].iCurrentTrack + 1][0], g_fZonePoints[g_eInfo[client].iCurrentTrack + 1][2]);
 
     TeleportEntity(client, fOrigin, NULL_VECTOR, { 0.0, 0.0, 0.0 });
 
@@ -929,11 +929,11 @@ public Action CMD_End(int client, int args)
 
 public Action CMD_SetSpawn(int client, int args)
 {
-    int iTrack = g_pInfo[client].iCurrentTrack;
+    int iTrack = g_eInfo[client].iCurrentTrack;
 
-    if (g_pInfo[client].iInZone != iTrack)
+    if (g_eInfo[client].iInZone != iTrack)
     {
-        PrintToChat(client, "%s Must be in selected zone to set spawnpoint.", PREFIX);
+        PrintToChat(client, "%s Must be in selected zone to set spawnpoint.", g_sPrefix);
         return Plugin_Handled;
     }
 
@@ -949,23 +949,23 @@ public Action CMD_SetSpawn(int client, int args)
     g_fSpawnAngles[client][iTrack / 2]    = fAngles;
     g_bHasCustomSpawn[client][iTrack / 2] = true;
 
-    PrintToChat(client, "%s Saved spawn.", PREFIX);
+    PrintToChat(client, "%s Saved spawn.", g_sPrefix);
 
     return Plugin_Handled;
 }
 
 public Action CMD_DelSpawn(int client, int args)
 {
-    int iTrack = g_pInfo[client].iCurrentTrack;
+    int iTrack = g_eInfo[client].iCurrentTrack;
 
     if (!g_bHasCustomSpawn[client][iTrack / 2])
     {
-        PrintToChat(client, "%s No custom spawn set for current track.", PREFIX);
+        PrintToChat(client, "%s No custom spawn set for current track.", g_sPrefix);
         return Plugin_Handled;
     }
 
     g_bHasCustomSpawn[client][iTrack / 2] = false;
-    PrintToChat(client, "%s Removed custom spawn.", PREFIX);
+    PrintToChat(client, "%s Removed custom spawn.", g_sPrefix);
     
     return Plugin_Handled;
 }
@@ -976,13 +976,13 @@ public Action CMD_DelSpawn(int client, int args)
 
 void ClearPlayerInfo(int client)
 {
-    g_pInfo[client].bIsCreatingZone = false;
-    g_pInfo[client].iInZone         = -1;
-    g_pInfo[client].iCurrentTrack   = Track_MainStart;
-    g_pInfo[client].iEditingTrack   = Track_MainStart;
+    g_eInfo[client].bIsCreatingZone = false;
+    g_eInfo[client].iInZone         = -1;
+    g_eInfo[client].iCurrentTrack   = Track_MainStart;
+    g_eInfo[client].iEditingTrack   = Track_MainStart;
     
-    ClearTimer(g_pInfo[client].hZoneTimer);
-    ClearTimer(g_pInfo[client].hSnapTimer);
+    ClearTimer(g_eInfo[client].hZoneTimer);
+    ClearTimer(g_eInfo[client].hSnapTimer);
 }
 
 void DrawZone(int client, float points[8][3], int beam, float width, const int color[4], int speed)
@@ -1033,7 +1033,7 @@ void DrawZone(int client, float points[8][3], int beam, float width, const int c
 
 void HandleZoneMovement(int client)
 {
-    if (g_pInfo[client].iInZone == -1)
+    if (g_eInfo[client].iInZone == -1)
     {
         return;
     }
@@ -1042,7 +1042,7 @@ void HandleZoneMovement(int client)
      * If the player is in the air and in the start zone of specified track, limit their speed to 250 u/s
     */
 
-    if (!(GetEntityFlags(client) & FL_ONGROUND) && g_pInfo[client].iInZone == g_pInfo[client].iCurrentTrack)
+    if (!(GetEntityFlags(client) & FL_ONGROUND) && g_eInfo[client].iInZone == g_eInfo[client].iCurrentTrack)
     {
         float fVel[3];
 
@@ -1169,7 +1169,7 @@ public int Native_IsPlayerInZone(Handle plugin, int param)
         return -1;
     }
     
-    return g_pInfo[GetNativeCell(1)].iInZone;
+    return g_eInfo[GetNativeCell(1)].iInZone;
 }
 
 public int Native_GetPlayerTrack(Handle plugin, int param)
@@ -1179,5 +1179,5 @@ public int Native_GetPlayerTrack(Handle plugin, int param)
         return -1;
     }
 
-    return g_pInfo[GetNativeCell(1)].iCurrentTrack;
+    return g_eInfo[GetNativeCell(1)].iCurrentTrack;
 }

@@ -13,7 +13,7 @@ enum struct PlayerTimerInfo
     float fPb[4];        // Pb (in seconds) for each track (only 0 and 2 are used, but size is 4 so arrays line up easier)
 }
 
-PlayerTimerInfo g_pInfo[MAXPLAYERS + 1];
+PlayerTimerInfo g_eInfo[MAXPLAYERS + 1];
 
 float    g_fRecord[4];   // Server record for each track, and eventually each style
 
@@ -23,6 +23,7 @@ Database g_hDB;
 
 bool     g_bLate;
 bool     g_bDBLoaded;
+bool     g_bStylesLoaded;
 
 Handle   g_hBeatSrForward;
 Handle   g_hBeatPbForward;
@@ -69,8 +70,29 @@ public APLRes AskPluginLoad2(Handle plugin, bool late, char[] error, int err_max
     CreateNative("StopTimer", Native_StopTimer);
     CreateNative("GetPlayerStartTick", Native_GetPlayerStartTick);
     CreateNative("IsPlayerInRun", Native_IsPlayerInRun);
-
+    
     return APLRes_Success;
+}
+
+public void OnAllPluginsLoaded()
+{
+    g_bStylesLoaded = LibraryExists("globaltimer_styles");
+}
+
+public void OnLibraryAdded(const char[] name)
+{
+    if (StrEqual(name, "globaltimer_styles"))
+    {
+        g_bStylesLoaded = true;
+    }
+}
+
+public void OnLibraryRemoved(const char[] name)
+{
+    if (StrEqual(name, "globaltimer_styles"))
+    {
+        g_bStylesLoaded = false;
+    }
 }
 
 //=================================
@@ -96,13 +118,14 @@ public void OnMapStart()
     GetMapRecord(Track_BonusStart);
 }
 
-void OnClientPostAdminCheck(int client)
+public void OnClientPostAdminCheck(int client)
 {
     GetPlayerInfo(client);
 
     /**
      * Cancel any damage taken
     */
+
     SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
 }
 
@@ -122,10 +145,12 @@ public void OnPlayerLeaveZone(int client, int tick, int track)
      * Start timer if player left from track start
     */
 
-    if (track == g_pInfo[client].iTrack)
+    if (track == g_eInfo[client].iTrack)
     {
-        g_pInfo[client].iStartTick = tick;
-        g_pInfo[client].bInRun = true;
+        PrintToChatAll("styles: %b", g_bStylesLoaded);
+
+        g_eInfo[client].iStartTick = tick;
+        g_eInfo[client].bInRun = true;
 
         Call_StartForward(g_hTimerStartForward);
 
@@ -139,7 +164,7 @@ public void OnPlayerLeaveZone(int client, int tick, int track)
 
 public void OnPlayerTrackChange(int client)
 {
-    g_pInfo[client].iTrack = GetPlayerTrack(client);
+    g_eInfo[client].iTrack = GetPlayerTrack(client);
 }
 
 public void OnPlayerEnterZone(int client, int tick, int track)
@@ -148,11 +173,11 @@ public void OnPlayerEnterZone(int client, int tick, int track)
      * If the player enters end zone for correct track
     */
 
-    if (track == g_pInfo[client].iTrack + 1 && g_pInfo[client].bInRun)
+    if (track == g_eInfo[client].iTrack + 1 && g_eInfo[client].bInRun)
     {
         char  sFormattedTime[64];
-        float fTime = (GetGameTickCount() - g_pInfo[client].iStartTick) * GetTickInterval();
-        float fOldTime = g_pInfo[client].fPb[g_pInfo[client].iTrack];
+        float fTime = (GetGameTickCount() - g_eInfo[client].iStartTick) * GetTickInterval();
+        float fOldTime = g_eInfo[client].fPb[g_eInfo[client].iTrack];
 
         FormatSeconds(fTime, sFormattedTime, sizeof(sFormattedTime), true);
 
@@ -162,15 +187,15 @@ public void OnPlayerEnterZone(int client, int tick, int track)
          *     3 forwards be called?
         */
 
-        if (fTime < g_fRecord[g_pInfo[client].iTrack] || g_fRecord[g_pInfo[client].iTrack] == 0.0)
+        if (fTime < g_fRecord[g_eInfo[client].iTrack] || g_fRecord[g_eInfo[client].iTrack] == 0.0)
         {
             /**
              * Player beats SR
             */
             
-            float fOldRecord = g_fRecord[g_pInfo[client].iTrack];
+            float fOldRecord = g_fRecord[g_eInfo[client].iTrack];
 
-            g_fRecord[g_pInfo[client].iTrack] = fTime;
+            g_fRecord[g_eInfo[client].iTrack] = fTime;
 
             Call_StartForward(g_hBeatSrForward);
 
@@ -188,7 +213,7 @@ public void OnPlayerEnterZone(int client, int tick, int track)
              * Player beats PB
             */
 
-            g_pInfo[client].fPb[g_pInfo[client].iTrack] = fTime;
+            g_eInfo[client].fPb[g_eInfo[client].iTrack] = fTime;
             SavePlayerTime(client);
 
             Call_StartForward(g_hBeatPbForward);
@@ -209,14 +234,14 @@ public void OnPlayerEnterZone(int client, int tick, int track)
             Call_StartForward(g_hFinishedTrackForward);
 
             Call_PushCell(client);
-            Call_PushCell(g_pInfo[client].iTrack);
+            Call_PushCell(g_eInfo[client].iTrack);
             Call_PushFloat(fTime);
-            Call_PushFloat(g_pInfo[client].fPb[g_pInfo[client].iTrack]);
+            Call_PushFloat(g_eInfo[client].fPb[g_eInfo[client].iTrack]);
 
             Call_Finish();
         }
 
-        g_pInfo[client].bInRun = false;
+        g_eInfo[client].bInRun = false;
     }
 }
 
@@ -236,15 +261,15 @@ void SetupDB()
 
     if (g_hDB == null)
     {
-        SetFailState("%s Error connecting to db (%s)", PREFIX, sError);
+        SetFailState("%s Error connecting to db (%s)", g_sPrefix, sError);
         CloseHandle(g_hDB);
         return;
     }
 
-    g_hDB.Query(DB_ErrorHandler, "CREATE TABLE IF NOT EXISTS records(id INTEGER PRIMARY KEY, map TEXT, id64 TEXT, track INTEGER, time REAL);", _);
+    g_hDB.Query(DB_ErrorHandler, "CREATE TABLE IF NOT EXISTS records(id INTEGER PRIMARY KEY, map TEXT, id64 TEXT, track INTEGER, time REAL, timestamp INTEGER);", _);
 
     g_bDBLoaded = true;
-    PrintToServer("%s Record database successfully loaded!", PREFIX);
+    PrintToServer("%s Record database successfully loaded!", g_sPrefix);
 
     CloseHandle(hKeyValues);
 }
@@ -262,7 +287,7 @@ void SavePlayerTime(int client)
 {
     char sQuery[256];
 
-    Format(sQuery, sizeof(sQuery), "SELECT * FROM 'records' WHERE id64 = '%s' AND map = '%s' AND track = %i", g_pInfo[client].sId64, g_sMapName, g_pInfo[client].iTrack);
+    Format(sQuery, sizeof(sQuery), "SELECT * FROM 'records' WHERE id64 = '%s' AND map = '%s' AND track = %i", g_eInfo[client].sId64, g_sMapName, g_eInfo[client].iTrack);
 
     g_hDB.Query(DB_SaveTimeHandler, sQuery, client);
 }
@@ -276,7 +301,7 @@ void FindPb(int client)
         OnMapStart();
     }
 
-    Format(sQuery, sizeof(sQuery), "SELECT * FROM 'records' WHERE id64 = '%s' AND map = '%s'", g_pInfo[client].sId64, g_sMapName);
+    Format(sQuery, sizeof(sQuery), "SELECT * FROM 'records' WHERE id64 = '%s' AND map = '%s'", g_eInfo[client].sId64, g_sMapName);
 
     g_hDB.Query(DB_FindPbHandler, sQuery, client);
 }
@@ -285,7 +310,7 @@ void OverwriteTime(int client, int id)
 {
     char sQuery[256];
 
-    Format(sQuery, sizeof(sQuery), "UPDATE records SET time = %f WHERE id = %i", g_pInfo[client].fPb[g_pInfo[client].iTrack], id);
+    Format(sQuery, sizeof(sQuery), "UPDATE records SET time = %f, timestamp = %i WHERE id = %i", g_eInfo[client].fPb[g_eInfo[client].iTrack], GetTime(), id);
 
     g_hDB.Query(DB_ErrorHandler, sQuery, _);
 }
@@ -296,13 +321,13 @@ public void DB_FindPbHandler(Database db, DBResultSet results, const char[] erro
 
     if (db == null || results == null)
     {
-        SetFailState("%s DB error. (%s)", PREFIX, error);
+        SetFailState("%s DB error. (%s)", g_sPrefix, error);
         return;
     }
 
     if (results.RowCount == 0)
     {
-        g_pInfo[client].fPb = 0.0;
+        g_eInfo[client].fPb = 0.0;
     }
     else
     {
@@ -310,11 +335,11 @@ public void DB_FindPbHandler(Database db, DBResultSet results, const char[] erro
         {
             if (results.FetchInt(3) == Track_MainStart)
             {
-                g_pInfo[client].fPb[Track_MainStart] = results.FetchFloat(4);
+                g_eInfo[client].fPb[Track_MainStart] = results.FetchFloat(4);
             }
             else
             {
-                g_pInfo[client].fPb[Track_BonusStart] = results.FetchFloat(4);
+                g_eInfo[client].fPb[Track_BonusStart] = results.FetchFloat(4);
             }
         }
     }
@@ -326,7 +351,7 @@ public void DB_SaveTimeHandler(Database db, DBResultSet results, const char[] er
 
     if (db == null || results == null)
     {
-        SetFailState("%s DB error. (%s)", PREFIX, error);
+        SetFailState("%s DB error. (%s)", g_sPrefix, error);
         return;
     }
 
@@ -334,7 +359,7 @@ public void DB_SaveTimeHandler(Database db, DBResultSet results, const char[] er
 
     if (results.RowCount == 0)
     {
-        Format(sQuery, sizeof(sQuery), "INSERT INTO records(map, id64, track, time) VALUES('%s', '%s', %i, %f)", g_sMapName, g_pInfo[client].sId64, g_pInfo[client].iTrack, g_pInfo[client].fPb[g_pInfo[client].iTrack]);
+        Format(sQuery, sizeof(sQuery), "INSERT INTO records(map, id64, track, time, timestamp) VALUES('%s', '%s', %i, %f, %i)", g_sMapName, g_eInfo[client].sId64, g_eInfo[client].iTrack, g_eInfo[client].fPb[g_eInfo[client].iTrack], GetTime());
         g_hDB.Query(DB_ErrorHandler, sQuery, _);
     }
     else
@@ -349,7 +374,7 @@ public void DB_GetRecordHandler(Database db, DBResultSet results, const char[] e
 
     if (db == null || results == null)
     {
-        SetFailState("%s DB error. (%s)", PREFIX, error);
+        SetFailState("%s DB error. (%s)", g_sPrefix, error);
         return;
     }
 
@@ -369,12 +394,7 @@ public void DB_GetRecordHandler(Database db, DBResultSet results, const char[] e
 
 void GetPlayerInfo(int client)
 {
-    if (!IsValidClient(client))
-    {
-        return;
-    }
-
-    GetClientAuthId(client, AuthId_SteamID64, g_pInfo[client].sId64, 64);
+    GetClientAuthId(client, AuthId_SteamID64, g_eInfo[client].sId64, 64);
     
     FindPb(client);
 }
@@ -390,7 +410,7 @@ public int Native_StopTimer(Handle plugin, int param)
         return;
     }
 
-    g_pInfo[GetNativeCell(1)].bInRun = false;
+    g_eInfo[GetNativeCell(1)].bInRun = false;
 }
 
 /*
@@ -405,7 +425,7 @@ public int Native_GetPlayerStartTick(Handle plugin, int param)
         return -1;
     }
 
-    return g_pInfo[GetNativeCell(1)].iStartTick;
+    return g_eInfo[GetNativeCell(1)].iStartTick;
 }
 
 public int Native_IsPlayerInRun(Handle plugin, int param)
@@ -415,5 +435,5 @@ public int Native_IsPlayerInRun(Handle plugin, int param)
         return -1;
     }
 
-    return g_pInfo[GetNativeCell(1)].bInRun;
+    return g_eInfo[GetNativeCell(1)].bInRun;
 }
