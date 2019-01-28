@@ -398,6 +398,11 @@ void GetPlayerInfo(int client)
 
 float fLowestNum = 9999.0;
 
+/**
+ * Full credit for figuring this out goes to Momentum Mod. All I did was change their code to work with SourceMod.
+ * https://github.com/momentum-mod/game
+ */
+
 float CalculateTimeOffset(int client, int type)
 {
     float fVel[3];
@@ -517,14 +522,14 @@ public bool HitMask(int entity)
         return true;
     }
 
-    Handle tr = TR_ClipCurrentRayToEntityEx(MASK_ALL, entity);
+    Handle hRay = TR_ClipCurrentRayToEntityEx(MASK_ALL, entity);
 
-    float pos[3];
-    TR_GetEndPosition(pos, tr);
+    float fPos[3];
+    TR_GetEndPosition(fPos, hRay);
 
-    delete tr;
+    delete hRay;
 
-    float fDist = GetVectorDistance(g_fTracePoint, pos);
+    float fDist = GetVectorDistance(g_fTracePoint, fPos);
 
     if (fDist < fLowestNum)
     {
