@@ -33,6 +33,7 @@ enum struct PlayerZoneInfo
 enum struct Zone
 {
     int      iEntityIndex;          // Entity index for zone.
+    int      iBorderEntityIndex;    // Secondary entity for start touch.
     int      iTrack;                // Main/Bonus.
     int      iType;                 // Start/End.
     bool     bValid;                // Whether or not zone entity has been created.
@@ -58,6 +59,7 @@ char g_sBeamName[128];
 char g_sBeamPath[256];
 
 Handle g_hLeaveZoneForward;
+Handle g_hLeaveZoneForwardPre;
 Handle g_hEnterZoneForward;
 Handle g_hTrackChangeForward;
 
@@ -119,6 +121,7 @@ public void OnPluginStart()
     SetupDB();
 
     g_hLeaveZoneForward   = CreateGlobalForward("OnPlayerLeaveZone", ET_Event, Param_Cell, Param_Cell, Param_Cell, Param_Cell);
+    g_hLeaveZoneForwardPre = CreateGlobalForward("OnPlayerLeaveZonePre", ET_Event, Param_Cell, Param_Cell, Param_Cell, Param_Cell);
     g_hEnterZoneForward   = CreateGlobalForward("OnPlayerEnterZone", ET_Event, Param_Cell, Param_Cell, Param_Cell, Param_Cell);
     g_hTrackChangeForward = CreateGlobalForward("OnPlayerTrackChange", ET_Event, Param_Cell, Param_Cell);
 
@@ -167,6 +170,8 @@ public void OnPluginEnd()
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
     g_bLate = late;
+
+    CreateNative("GetZoneOrigin", Native_GetZoneOrigin);
 
     return APLRes_Success;
 }
@@ -298,6 +303,18 @@ public void OnEndTouch(int entity, int client)
             Call_Finish();
 
             g_eInfo[client].iPreviousLeftTick = GetGameTickCount();
+        }
+
+        if (entity == g_eZones[i].iBorderEntityIndex)
+        {
+            Call_StartForward(g_hLeaveZoneForwardPre);
+
+            Call_PushCell(client);
+            Call_PushCell(GetGameTickCount());
+            Call_PushCell(g_eZones[i].iTrack);
+            Call_PushCell(g_eZones[i].iType);
+
+            Call_Finish();
         }
     }
 }
@@ -752,6 +769,10 @@ void SetupZonePoints(float zone[8][3], int height)
 
 void CreateZoneEntity(int id, int track, int type)
 {
+    char sTargetName[32];
+
+    Format(sTargetName, sizeof(sTargetName), "gt_trig_%i_%i", track, type);
+
     /**
      * Set up mins/maxs
      */
@@ -782,6 +803,7 @@ void CreateZoneEntity(int id, int track, int type)
 
     DispatchKeyValue(g_eZones[id].iEntityIndex, "StartDisabled", "1");
     DispatchKeyValue(g_eZones[id].iEntityIndex, "spawnflags", "1");
+    DispatchKeyValue(g_eZones[id].iEntityIndex, "targetname", sTargetName);
 
     SetEntProp(g_eZones[id].iEntityIndex, Prop_Send, "m_fEffects", 32);
     SetEntityModel(g_eZones[id].iEntityIndex, "models/props/cs_office/vending_machine.mdl");
@@ -875,7 +897,7 @@ public Action DrawZoneLoop(Handle timer, int client)
         GetClientEyePosition(client, fOrigin);
         GetClientEyeAngles(client, fAngles);
 
-        Handle trace = TR_TraceRayFilterEx(fOrigin, fAngles, MASK_SHOT, RayType_Infinite, TraceEntityFilterPlayer);
+        Handle trace = TR_TraceRayFilterEx(fOrigin, fAngles, MASK_ALL, RayType_Infinite, TraceEntityFilterPlayer);
 
         if (TR_DidHit(trace))
         {
@@ -1298,4 +1320,9 @@ public Action CMD_Restart(int client, int args)
     TeleportEntity(client, g_fZoneOrigin[FindZoneIndex(g_eInfo[client].iCurrentTrack, Zone_Start)], NULL_VECTOR, {0.0, 0.0, 0.0});
 
     return Plugin_Handled;
+}
+
+public int Native_GetZoneOrigin(Handle plugin, int param)
+{
+    SetNativeArray(3, g_fZoneOrigin[GetNativeCell(1)][GetNativeCell(2)], 3);
 }

@@ -34,6 +34,30 @@ enum DBType
     DB_Undefined // No entry in databases.cfg (just used for setup, after setup it should be set to SQLite)
 };
 
+/**
+ * Thanks to PremyslTalich/ColorVariables on GitHub.
+ * https://github.com/PremyslTalich/ColorVariables/blob/master/addons/sourcemod/scripting/includes/colorvariables.inc#L966-#L983
+*/
+char g_sColors[][][] =
+{
+    { "{white}",      "\x01" },
+    { "{darkred}",    "\x02" },
+    { "{purple}",     "\x03" },
+    { "{green}",      "\x04" },
+    { "{olive}",      "\x05" },
+    { "{lightgreen}", "\x06" },
+    { "{red}",        "\x07" },
+    { "{gray}",       "\x08" },
+    { "{yellow}",     "\x09" },
+    { "{gold}",       "\x10" },
+    { "{bluegray}",   "\x0A" },
+    { "{blue}",       "\x0B" },
+    { "{darkblue}",   "\x0C" },
+    { "{gray2}",      "\x0D" },
+    { "{orchid}",     "\x0E" },
+    { "{lightred}",   "\x0F" }
+};
+
 char g_sPrefix[128] = " \x01[\x0BGlobalTimer\x01]";
 
 /**
@@ -96,6 +120,13 @@ forward void OnPlayerFinishedTrack(int client, int track, float time, float pb);
  * @param track     Index of new track. (Main/Bonus)
  */
 forward void OnPlayerTrackChange(int client, int track);
+
+/**
+ * Returns the player's current track.
+ *
+ * @param client    Client index.
+ */
+native int GetPlayerTrack(int client);
 
 /**
  * Gets the smaller of the two numbers.
@@ -177,15 +208,30 @@ stock void FormatSeconds(float time, char[] output, int size, bool accurate)
 
     if (iHours > 0)
     {
-        Format(output, size, accurate ? "%s%i:%s%i:%s%.3fs" : "%s%i:%s%i:%s%.1fs", (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10) ? "0" : "", iSeconds);
+        Format(output, size, accurate ? "%s%i:%s%i:%s%fs" : "%s%i:%s%i:%s%.1fs", (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10) ? "0" : "", iSeconds);
     }
     else if (iMinutes > 0)
     {
-        Format(output, size, accurate ? "%s%i:%s%.3fs" : "%s%i:%s%.1fs", (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10.0) ? "0" : "", iSeconds);
+        Format(output, size, accurate ? "%s%i:%s%fs" : "%s%i:%s%.1fs", (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10.0) ? "0" : "", iSeconds);
     }
     else
     {
-        Format(output, size, accurate ? "%s%.3fs" : "%s%.1fs", (iSeconds < 10) ? "0" : "", iSeconds);
+        Format(output, size, accurate ? "%s%fs" : "%s%.1fs", (iSeconds < 10) ? "0" : "", iSeconds);
+    }
+}
+
+/**
+ * Formats readable color codes to "real" colors. Ex: {darkred} -> \x02
+ *
+ * @param format    String to be formatted.
+ * @param size      Size of string.
+ * @noreturn
+ */
+stock void FormatColors(char[] format, int size)
+{
+    for (int i = 0; i < sizeof(g_sColors); i++)
+    {
+        ReplaceString(format, size, g_sColors[i][0], g_sColors[i][1], false);
     }
 }
 
@@ -219,7 +265,6 @@ stock bool GetKV(const char[] type, const char[] value, char[] result, int size,
     delete kv;
     return true;
 }
-
 
 /**
  * Kills a timer and frees its memory.
