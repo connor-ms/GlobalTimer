@@ -43,7 +43,7 @@ PlayerZoneInfo g_eInfo[MAXPLAYERS + 1];
 Zone           g_eZones[MAXZONES];
 DB             g_eDB;
 
-int   g_iZoneCount = 0;
+int   g_iZoneCount;
 float g_fZonePoints[MAXZONES][8][3];
 float g_fZoneOrigin[MAXZONES][3];
 int   g_iBeam[MAXZONES][12];
@@ -126,6 +126,7 @@ public void OnPluginStart()
     g_hTrackChangeForward = CreateGlobalForward("OnPlayerTrackChange", ET_Event, Param_Cell, Param_Cell);
 
     HookEvent("round_start", OnRoundStart);
+    HookEvent("player_spawn", OnPlayerSpawn);
 
     /**
      * Admin commands
@@ -212,6 +213,20 @@ public void OnRoundStart(Event event, const char[] name, bool broadcast)
             CreateZoneEntities(i, g_eZones[i].iTrack, g_eZones[i].iType);
         }
     }
+}
+
+public void OnPlayerSpawn(Event event, const char[] name, bool broadcast)
+{
+    int client = GetClientOfUserId(GetEventInt(event, "userid"));
+
+    int iZone = FindZoneIndex(g_eInfo[client].iTrack, g_eInfo[client].iType);
+
+    if (iZone == -1 || !g_eZones[iZone].bValid)
+    {
+        return;
+    }
+    
+    CMD_Restart(client, 0);
 }
 
 public void OnClientConnected(int client)
@@ -439,7 +454,7 @@ void DB_SaveZoneHandler(Database db, DBResultSet results, const char[] error, in
         DB_Query(sQuery_SQLite, sQuery_MySQL, DB_ErrorHandler, _);
     }
 
-    LogAction(client, -1, "Created zone on map %s", g_sMapName);
+    LogMessage("%L created zone '[%s] %s' on map %s", client, g_sTracks[g_eZones[iZoneIndex].iTrack], g_sZoneTypes[g_eZones[iZoneIndex].iType], g_sMapName);
 }
 
 void DB_LoadZones()
@@ -840,6 +855,8 @@ void RemoveZone(int id)
         return;
     }
 
+    g_eZones[id].bValid = false;
+
     /**
      * Remove enter/exit trigger
      */
@@ -871,6 +888,46 @@ int FindZoneIndex(int track, int type)
     }
 
     return -1;
+}
+
+void RemoveZonePermanent(int client, int track)
+{
+    if (track == INVALID_TRACK)
+    {
+        int iZone = FindZoneIndex(g_eInfo[client].iTrack, g_eInfo[client].iType);
+
+        RemoveZone(iZone);
+
+        char sQuery_SQLite[128];
+
+        Format(sQuery_SQLite, sizeof(sQuery_SQLite), "DELETE FROM zones WHERE track = %i AND type = %i;", g_eZones[iZone].iTrack, g_eZones[iZone].iType);
+
+        DB_Query(sQuery_SQLite, "", DB_ErrorHandler, _);
+
+        LogMessage("%L removed zone '[%s] %s' on map %s.", client, g_sTracks[g_eZones[iZone].iTrack], g_sZoneTypes[g_eZones[iZone].iType], g_sMapName);
+    }
+    else
+    {
+        /**
+         * If the track is specified, remove all zones for that track.
+         */
+
+        for (int i = 0; i < MAXZONES; i++)
+        {
+            if (g_eZones[i].bValid && g_eZones[i].iTrack == track)
+            {
+                RemoveZone(i);
+            }
+        }
+
+        char sQuery_SQLite[128];
+
+        Format(sQuery_SQLite, sizeof(sQuery_SQLite), "DELETE FROM zones WHERE track = %i;", track);
+
+        DB_Query(sQuery_SQLite, "", DB_ErrorHandler, _);
+
+        LogMessage("%L removed all '[%s]' zones on map %s.", client, g_sTracks[track], g_sMapName);
+    }
 }
 
 //=================================
@@ -989,6 +1046,7 @@ int MenuHandler_ZoneParent(Menu menu, MenuAction action, int client, int index)
 
         if (StrEqual(sInfo, "remove"))
         {
+            OpenRemoveZoneMenu(client);
         }
 
         if (StrEqual(sInfo, "edit"))
@@ -1128,15 +1186,126 @@ int MenuHandler_SpecifyPoints(Menu menu, MenuAction action, int client, int inde
     return 0;
 }
 
+int MenuHandler_RemoveZone(Menu menu, MenuAction action, int client, int index)
+{
+    if (action == MenuAction_Select)
+    {
+        char sInfo[16];
+
+        if (!menu.GetItem(index, sInfo, sizeof(sInfo)))
+        {
+            return 0;
+        }
+
+        if (StrEqual(sInfo, "allmain"))
+        {
+            OpenConfirmMenu(client, Track_Main);
+        }
+        else if (StrEqual(sInfo, "allbonus"))
+        {
+            OpenConfirmMenu(client, Track_Bonus);
+        }
+        else
+        {
+            int iZone = StringToInt(sInfo);
+
+            /**
+             * Set the editing zone to the one being deleted, since
+             * SourceMod doesn't allow passing data through a MenuHandler.
+             */
+
+            g_eInfo[client].iTrack = g_eZones[iZone].iTrack;
+            g_eInfo[client].iType  = g_eZones[iZone].iType;
+
+            OpenConfirmMenu(client, INVALID_TRACK);
+        }
+    }
+    else if (action == MenuAction_Cancel && index == MenuCancel_ExitBack)
+    {
+        OpenZoneParentMenu(client);
+    }
+    else if (action == MenuAction_End)
+    {
+        delete menu;
+    }
+
+    return 0;
+}
+
+int MenuHandler_ConfirmDeletion(Menu menu, MenuAction action, int client, int index)
+{
+    if (action == MenuAction_Select)
+    {
+        char sInfo[16];
+
+        if (!menu.GetItem(index, sInfo, sizeof(sInfo)))
+        {
+            return 0;
+        }
+
+        if (StrEqual(sInfo, "yesmain"))
+        {
+            RemoveZonePermanent(client, Track_Main);
+        }
+
+        if (StrEqual(sInfo, "yesbonus"))
+        {
+            RemoveZonePermanent(client, Track_Bonus);
+        }
+
+        if (StrEqual(sInfo, "yes"))
+        {
+            RemoveZonePermanent(client, INVALID_TRACK);
+        }
+        
+        if (StrEqual(sInfo, "no"))
+        {
+            OpenRemoveZoneMenu(client);
+            return 0;
+        }
+    }
+    else if (action == MenuAction_End)
+    {
+        delete menu;
+    }
+
+    return 0;
+}
+
 void OpenZoneParentMenu(int client)
 {
+    bool bEnabled = false;
+
     Menu hMenu = new Menu(MenuHandler_ZoneParent);
 
     hMenu.SetTitle("Zone Menu");
 
     hMenu.AddItem("create", "Create zone");
-    hMenu.AddItem("remove", "Remove zones");
-    hMenu.AddItem("edit",   "Edit zones");
+
+    /**
+     * Loop through all zones, and if any are valid show
+     * remove/edit menu.
+     */
+
+    for (int i = 0; i < MAXZONES; i++)
+    {
+        if (g_eZones[i].bValid)
+        {
+            bEnabled = true;
+            break;
+        }
+    }
+
+    if (bEnabled)
+    {
+        hMenu.AddItem("remove", "Remove zones");
+        hMenu.AddItem("edit",   "Edit zones");
+    }
+    else
+    {
+        hMenu.AddItem("remove", "Remove zones", ITEMDRAW_DISABLED);
+        hMenu.AddItem("edit",   "Edit zones", ITEMDRAW_DISABLED);
+    }
 
     hMenu.Display(client, MENU_TIME_FOREVER);
 }
@@ -1174,6 +1343,62 @@ void OpenCreateZoneMenu(int client)
 
     hMenu.ExitBackButton = true;
     hMenu.ExitButton     = false;
+
+    hMenu.Display(client, MENU_TIME_FOREVER);
+}
+
+void OpenRemoveZoneMenu(int client)
+{
+    char sTitle[64];
+    char sInfo[3];
+
+    Menu hMenu = new Menu(MenuHandler_RemoveZone);
+
+    hMenu.SetTitle("Remove Zones");
+
+    hMenu.AddItem("allmain", "Remove all [Main] zones");
+    hMenu.AddItem("allbonus", "Remove all [Bonus] zones\n ");
+
+    for (int i = 0; i < MAXZONES; i++)
+    {
+        if (g_eZones[i].bValid)
+        {
+            Format(sTitle, sizeof(sTitle), "#%i - [%s] %s", i, g_sTracks[g_eZones[i].iTrack], g_sZoneTypes[g_eZones[i].iType]);
+            Format(sInfo, sizeof(sInfo), "%i", i);
+            hMenu.AddItem(sInfo, sTitle);
+        }
+    }
+
+    hMenu.Pagination = true;
+    hMenu.ExitBackButton = true;
+
+    hMenu.Display(client, MENU_TIME_FOREVER);
+}
+
+void OpenConfirmMenu(int client, int track)
+{
+    char sTitle[64];
+
+    Menu hMenu = new Menu(MenuHandler_ConfirmDeletion);
+
+    if (track == INVALID_TRACK)
+    {
+        Format(sTitle, sizeof(sTitle), "Confirm deletion of\n'[%s] %s'?", g_sTracks[g_eInfo[client].iTrack], g_sZoneTypes[g_eInfo[client].iType]);
+
+        hMenu.SetTitle(sTitle);
+
+        hMenu.AddItem("yes", "Yes");
+        hMenu.AddItem("no", "No");
+    }
+    else
+    {
+        Format(sTitle, sizeof(sTitle), "Confirm deletion of all '[%s]' zones?", g_sTracks[track]);
+
+        hMenu.SetTitle(sTitle);
+        
+        hMenu.AddItem((track == Track_Main) ? "yesmain" : "yesbonus", "Yes");
+        hMenu.AddItem("no", "No");
+    }
 
     hMenu.Display(client, MENU_TIME_FOREVER);
 }
@@ -1311,8 +1536,8 @@ public Action CMD_Restart(int client, int args)
 {
     int iZone = FindZoneIndex(g_eInfo[client].iCurrentTrack, Zone_Start);
 
-    if (iZone == -1)
-    {   
+    if (iZone == -1 || !g_eZones[iZone].bValid)
+    {
         PrintToChat(client, "%s\x08 No zone exists for \x01[\x05%s\x08, \x05Start\x01]\x08.", g_sPrefix, g_sTracks[g_eInfo[client].iCurrentTrack]);
         return Plugin_Handled;
     }

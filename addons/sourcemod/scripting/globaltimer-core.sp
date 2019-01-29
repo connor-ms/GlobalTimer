@@ -84,6 +84,9 @@ public APLRes AskPluginLoad2(Handle plugin, bool late, char[] error, int err_max
 
 public void OnMapStart()
 {
+    g_fSr[Track_Main]  = 0.0;
+    g_fSr[Track_Bonus] = 0.0;
+
     GetCurrentMap(g_sMapName, sizeof(g_sMapName));
     GetMapDisplayName(g_sMapName, g_sMapName, sizeof(g_sMapName));
 
@@ -132,14 +135,14 @@ public void OnPlayerEnterZone(int client, int tick, int track, int type)
         FormatSeconds(fTime, sTime, sizeof(sTime), true);
         g_eInfo[client].bInRun = false;
 
-        if (fTime < g_fSr[track])
+        if (fTime < g_fSr[track] || g_fSr[track] == 0.0)
         {
             Call_StartForward(g_hBeatSrForward);
 
             Call_PushCell(client);
             Call_PushCell(track);
             Call_PushFloat(fTime);
-            Call_PushCell(g_fSr[track]);
+            Call_PushFloat(g_fSr[track]);
 
             Call_Finish();
 

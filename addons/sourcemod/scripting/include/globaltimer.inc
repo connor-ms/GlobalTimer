@@ -38,6 +38,7 @@ enum DBType
  * Thanks to PremyslTalich/ColorVariables on GitHub.
  * https://github.com/PremyslTalich/ColorVariables/blob/master/addons/sourcemod/scripting/includes/colorvariables.inc#L966-#L983
 */
+
 char g_sColors[][][] =
 {
     { "{white}",      "\x01" },
@@ -282,6 +283,15 @@ stock void ClearTimer(Handle &timer)
     timer = null;
 }
 
+/**
+ * Simple error handler.
+ *
+ * @param db        Database queried from.
+ * @param results   Results from query.
+ * @param error     Error message.
+ * @param data      Any data being passed.
+ * @noreturn
+ */
 stock void DB_ErrorHandler(Database db, DBResultSet results, const char[] error, any data)
 {
     if (db == null || results == null)
