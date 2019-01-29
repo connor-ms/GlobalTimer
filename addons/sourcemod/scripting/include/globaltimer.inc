@@ -56,7 +56,7 @@ char g_sColors[][][] =
     { "{darkblue}",   "\x0C" },
     { "{gray2}",      "\x0D" },
     { "{orchid}",     "\x0E" },
-    { "{lightred}",   "\x0F" }
+  
 };
 
 char g_sPrefix[128] = " \x01[\x0BGlobalTimer\x01]";
@@ -128,6 +128,14 @@ forward void OnPlayerTrackChange(int client, int track);
  * @param client    Client index.
  */
 native int GetPlayerTrack(int client);
+
+/**
+ * Stops the player's timer.
+ *
+ * @param client    Client index.
+ * @param notify    Whether the player should be notified.
+ */
+native void StopTimer(int client, bool notify);
 
 /**
  * Gets the smaller of the two numbers.

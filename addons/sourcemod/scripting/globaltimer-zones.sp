@@ -47,6 +47,8 @@ int   g_iZoneCount;
 float g_fZonePoints[MAXZONES][8][3];
 float g_fZoneOrigin[MAXZONES][3];
 int   g_iBeam[MAXZONES][12];
+float g_fBeamWidth;
+float g_fBeamSpeed;
 
 float g_fSnapPoint[MAXPLAYERS + 1][3];    // Since enum structs don't support arrays :(
 float g_fSetPoints[MAXPLAYERS + 1][2][3]; // To save the point for start/end point set in zone menu
@@ -540,9 +542,9 @@ void CreateBeam(int &entity, float start[3], float end[3], char[] color)
         SetEntityModel(entity, g_sBeamName);
 
         SetEntPropVector(entity, Prop_Data, "m_vecEndPos", end);
-        SetEntPropFloat(entity,  Prop_Data, "m_fWidth", 2.0);
-        SetEntPropFloat(entity,  Prop_Data, "m_fEndWidth", 2.0);
-        SetEntPropFloat(entity,  Prop_Data, "m_fSpeed", 5.0);
+        SetEntPropFloat(entity,  Prop_Data, "m_fWidth", g_fBeamWidth);
+        SetEntPropFloat(entity,  Prop_Data, "m_fEndWidth", g_fBeamWidth);
+        SetEntPropFloat(entity,  Prop_Data, "m_fSpeed", g_fBeamSpeed);
 
         DispatchKeyValue(entity, "rendercolor", color);
         DispatchKeyValue(entity, "renderamt", "255");
@@ -649,10 +651,19 @@ void AddFilesToDownloadTable()
 
 bool ReadConfig()
 {
+    char sTemp[16];
     bool bSuccess;
 
     bSuccess = GetKV("texture", "model", g_sBeamName, sizeof(g_sBeamName), "configs/GlobalTimer/zones.cfg");
-    bSuccess = GetKV("texture", "path", g_sBeamPath, sizeof(g_sBeamPath), "configs/GlobalTimer/zones.cfg");
+    bSuccess = GetKV("texture", "path",  g_sBeamPath, sizeof(g_sBeamPath), "configs/GlobalTimer/zones.cfg");
+
+    bSuccess = GetKV("texture", "speed", sTemp,       sizeof(sTemp),       "configs/GlobalTimer/zones.cfg");
+
+    g_fBeamSpeed = StringToFloat(sTemp);
+
+    bSuccess = GetKV("texture", "width", sTemp,       sizeof(sTemp),       "configs/GlobalTimer/zones.cfg");
+
+    g_fBeamWidth = StringToFloat(sTemp);
 
     for (int i = 0; i < 2; i++)
     {
@@ -709,7 +720,7 @@ void DrawTempZone(int client)
 
     SetupZonePoints(fPoints, g_eInfo[client].iZoneHeight);
 
-    DrawZone(client, fPoints, g_iBeamIndex, 2.0, 0);
+    DrawZone(client, fPoints, g_iBeamIndex, g_fBeamWidth, 0);
 }
 
 void DrawZone(int client, float points[8][3], int beam, float width, int speed)
@@ -1521,11 +1532,13 @@ public Action CMD_End(int client, int args)
 {
     int iZone = FindZoneIndex(g_eInfo[client].iCurrentTrack, Zone_End);
 
-    if (iZone == -1)
+    if (iZone == -1 || !g_eZones[iZone].bValid)
     {
         PrintToChat(client, "%s\x08 No zone exists for \x01[\x05%s\x08, \x05End\x01]\x08.", g_sPrefix, g_sTracks[g_eInfo[client].iCurrentTrack]);
         return Plugin_Handled;
     }
+    
+    StopTimer(client, true);
 
     TeleportEntity(client, g_fZoneOrigin[iZone], NULL_VECTOR, NULL_VECTOR);
 
@@ -1541,6 +1554,8 @@ public Action CMD_Restart(int client, int args)
         PrintToChat(client, "%s\x08 No zone exists for \x01[\x05%s\x08, \x05Start\x01]\x08.", g_sPrefix, g_sTracks[g_eInfo[client].iCurrentTrack]);
         return Plugin_Handled;
     }
+
+    StopTimer(client, false);
 
     TeleportEntity(client, g_fZoneOrigin[FindZoneIndex(g_eInfo[client].iCurrentTrack, Zone_Start)], NULL_VECTOR, {0.0, 0.0, 0.0});
 

@@ -53,8 +53,6 @@ public void OnPluginStart()
     g_hBeatPbForward      = CreateGlobalForward("OnPlayerBeatPb",        ET_Event, Param_Cell, Param_Cell, Param_Float, Param_Float);
     g_hFinishTrackForward = CreateGlobalForward("OnPlayerFinishedTrack", ET_Event, Param_Cell, Param_Cell, Param_Float, Param_Float);
 
-    RegConsoleCmd("sm_top", CMD_Top, "Displays top times for the map.");
-
     if (g_bLate)
     {
         for (int i = 1; i < MAXPLAYERS; i++)
@@ -72,6 +70,7 @@ public APLRes AskPluginLoad2(Handle plugin, bool late, char[] error, int err_max
     g_bLate = late;
 
     CreateNative("GetPlayerTrack", Native_GetPlayerTrack);
+    CreateNative("StopTimer", Native_StopTimer);
 
     RegPluginLibrary("globaltimer-core");
     
@@ -90,7 +89,8 @@ public void OnMapStart()
     GetCurrentMap(g_sMapName, sizeof(g_sMapName));
     GetMapDisplayName(g_sMapName, g_sMapName, sizeof(g_sMapName));
 
-    SetupSrMenu();
+    DB_GetSr(Track_Main);
+    DB_GetSr(Track_Bonus);
 }
 
 public void OnClientPostAdminCheck(int client)
@@ -105,12 +105,18 @@ public void OnClientPostAdminCheck(int client)
     GetPlayerInfo(client);
     
     SDKHook(client, SDKHook_PostThinkPost, OnPostThink);
+    SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
 }
 
 public void OnPostThink(int client)
 {
     g_fOrigins[client][1] = g_fOrigins[client][0];
     GetClientAbsOrigin(client, g_fOrigins[client][0]);
+}
+
+public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype)
+{
+    return Plugin_Handled;
 }
 
 public void OnPlayerLeaveZone(int client, int tick, int track, int type)
@@ -125,6 +131,11 @@ public void OnPlayerLeaveZone(int client, int tick, int track, int type)
 
 public void OnPlayerEnterZone(int client, int tick, int track, int type)
 {
+    if (type == Zone_Start && track == g_eInfo[client].iTrack)
+    {
+        g_eInfo[client].bInRun = false;
+    }
+
     if (type == Zone_End && track == g_eInfo[client].iTrack && g_eInfo[client].bInRun)
     {
         g_eInfo[client].fOffset -= CalculateTimeOffset(client, type);
@@ -200,6 +211,16 @@ public void OnPlayerTrackChange(int client, int track)
 public int Native_GetPlayerTrack(Handle plugin, int param)
 {
     return g_eInfo[GetNativeCell(1)].iTrack;
+}
+
+public int Native_StopTimer(Handle plugin, int param)
+{
+    if (view_as<bool>(GetNativeCell(2)))
+    {
+        PrintToChat(GetNativeCell(1), "%s \x07Your timer has been stopped.", g_sPrefix);
+    }
+
+    g_eInfo[GetNativeCell(1)].bInRun = false;
 }
 
 //=================================
@@ -300,30 +321,21 @@ void DB_GetSrHandler(Database db, DBResultSet results, const char[] error, int t
         LogError("Database error. (%s)", error);
         return;
     }
-
-    char sShortCut[3];
-    char sText[64];
-    char sTime[16];
-    char sHolder[64];
-
-    if (g_iTimes[track] == 0)
-    {
-        g_fSr[track] = results.FetchFloat(4);
-    }
-
+    
     while (results.FetchRow())
     {
-        g_iTimes[track]++;
-
-        results.FetchString(1, sHolder, sizeof(sHolder));
-        
-        FormatSeconds(results.FetchFloat(4), sTime, sizeof(sTime), true);
-
-        Format(sShortCut, sizeof(sShortCut), "%i", g_iTimes[track]);
-        Format(sText, sizeof(sText), "[#%i] - %s (%s)", g_iTimes[track], sTime, sHolder);
-
-        g_mSrMenu.AddItem(sShortCut, sText);
+        g_fSr[track] = results.FetchFloat(4);
+        PrintToChatAll("SR for track %i: %f", track, results.FetchFloat(4));
     }
+}
+
+void DB_GetSr(int track)
+{
+    char sQuery_SQLite[128];
+
+    Format(sQuery_SQLite, sizeof(sQuery_SQLite), "SELECT * FROM 'records' WHERE map='%s' AND track = %i ORDER BY time ASC LIMIT 1", g_sMapName, track);
+    
+    DB_Query(sQuery_SQLite, "", DB_GetSrHandler, track);
 }
 
 void DB_Query(const char[] sqlite, const char[] mysql, SQLQueryCallback callback, any data = 0, DBPriority priority = DBPrio_Normal)
@@ -349,26 +361,6 @@ int MenuHandler_Sr(Menu menu, MenuAction action, int client, int index)
     }
 
     return 0;
-}
-
-void SetupSrMenu()
-{
-    /**
-     * Just kinda thrown in without much thought for now. Will
-     * improve later
-     */
-    
-    g_mSrMenu = new Menu(MenuHandler_Sr);
-
-    g_mSrMenu.SetTitle("Records");
-
-    g_mSrMenu.Pagination = true;
-
-    char sQuery_SQLite[128];
-
-    Format(sQuery_SQLite, sizeof(sQuery_SQLite), "SELECT * FROM 'records' WHERE map='%s' AND track = 0 ORDER BY time ASC", g_sMapName);
-    
-    DB_Query(sQuery_SQLite, "", DB_GetSrHandler, 0);
 }
 
 //=================================
