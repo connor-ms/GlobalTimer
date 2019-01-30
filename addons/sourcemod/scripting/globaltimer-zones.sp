@@ -67,18 +67,6 @@ Handle g_hTrackChangeForward;
 
 char g_sMapName[128];
 
-char g_sTracks[2][5] =
-{
-    "Main",
-    "Bonus"
-};
-
-char g_sZoneTypes[][] =
-{
-    "Start",
-    "End"
-};
-
 /**
  * Color values for each zone. Set up to be track->type.
  * Example: if the first row was { "0 0 255", "255 0 0" }

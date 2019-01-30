@@ -11,6 +11,9 @@ enum struct PlayerInfo
     int   iTrack;       // Current track of player. (Main/Bonus)
     char  sId64[18];    // SteamID64 of player.
     float fOffset;      // Time missed between ticks.
+    int   iJumps;       // Amount of jumps in a run.
+    float iJumpSpeed;   // Speed from previous jump.
+    int   iCurrentZone; // Whether the player's in a zone or not. (-1 = no zone, >0 = zone index)
 }
 
 PlayerInfo g_eInfo[MAXPLAYERS + 1];
@@ -34,8 +37,6 @@ Handle g_hBeatSrForward;
 Handle g_hBeatPbForward;
 Handle g_hFinishTrackForward;
 
-Menu g_mSrMenu;
-
 public Plugin myinfo =
 {
     name        = "[GlobalTimer] Core",
@@ -53,6 +54,10 @@ public void OnPluginStart()
     g_hBeatPbForward      = CreateGlobalForward("OnPlayerBeatPb",        ET_Event, Param_Cell, Param_Cell, Param_Float, Param_Float);
     g_hFinishTrackForward = CreateGlobalForward("OnPlayerFinishedTrack", ET_Event, Param_Cell, Param_Cell, Param_Float, Param_Float);
 
+    HookEvent("player_jump", OnPlayerJump);
+
+    AddCommandListener(OnPlayerNoclip, "noclip");
+
     if (g_bLate)
     {
         for (int i = 1; i < MAXPLAYERS; i++)
@@ -69,8 +74,15 @@ public APLRes AskPluginLoad2(Handle plugin, bool late, char[] error, int err_max
 {
     g_bLate = late;
 
-    CreateNative("GetPlayerTrack", Native_GetPlayerTrack);
-    CreateNative("StopTimer", Native_StopTimer);
+    CreateNative("GetPlayerCurrentZone", Native_GetPlayerCurrentZone);
+    CreateNative("GetPlayerJumpCount",   Native_GetPlayerJumpCount);
+    CreateNative("GetPlayerJumpSpeed",   Native_GetPlayerJumpSpeed);
+    CreateNative("GetPlayerPb",          Native_GetPlayerPb);
+    CreateNative("GetPlayerTime",        Native_GetPlayerTime);
+    CreateNative("GetPlayerTrack",       Native_GetPlayerTrack);
+    CreateNative("IsPlayerInRun",        Native_IsPlayerInRun);
+    CreateNative("StopTimer",            Native_StopTimer);
+    CreateNative("GetSr",                Native_GetSr);
 
     RegPluginLibrary("globaltimer-core");
     
@@ -119,31 +131,56 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
     return Plugin_Handled;
 }
 
+public void OnPlayerJump(Event event, const char[] name, bool broadcast)
+{
+    int client = GetClientOfUserId(GetEventInt(event, "userid"));
+    float fVel[3];
+
+    GetEntPropVector(client, Prop_Data, "m_vecVelocity", fVel);
+    fVel[2] = 0.0;
+
+    g_eInfo[client].iJumpSpeed = GetVectorLength(fVel);
+
+    if (g_eInfo[client].iJumps >= 1 && !g_eInfo[client].bInRun)
+    {
+        return;
+    }
+
+    g_eInfo[client].iJumps++;
+}
+
 public void OnPlayerLeaveZone(int client, int tick, int track, int type)
 {
     if (type == Zone_Start && track == g_eInfo[client].iTrack)
     {
-        g_eInfo[client].bInRun     = true;
-        g_eInfo[client].iStartTick = tick;
-        g_eInfo[client].fOffset    = CalculateTimeOffset(client, type);
+        g_eInfo[client].bInRun       = true;
+        g_eInfo[client].iStartTick   = tick;
+        g_eInfo[client].fOffset      = CalculateTimeOffset(client, type);
+        g_eInfo[client].iCurrentZone = -1;
     }
 }
 
 public void OnPlayerEnterZone(int client, int tick, int track, int type)
 {
-    if (type == Zone_Start && track == g_eInfo[client].iTrack)
+    if (track != g_eInfo[client].iTrack)
     {
-        g_eInfo[client].bInRun = false;
+        return;
     }
 
-    if (type == Zone_End && track == g_eInfo[client].iTrack && g_eInfo[client].bInRun)
+    g_eInfo[client].iCurrentZone = type;
+
+    if (type == Zone_Start)
+    {
+        g_eInfo[client].bInRun = false;
+        g_eInfo[client].iJumps = 0;
+    }
+
+    if (type == Zone_End && g_eInfo[client].bInRun)
     {
         g_eInfo[client].fOffset -= CalculateTimeOffset(client, type);
 
-        char sTime[32];
         float fTime = ((tick - g_eInfo[client].iStartTick) * GetTickInterval()) + g_eInfo[client].fOffset;
 
-        FormatSeconds(fTime, sTime, sizeof(sTime), true);
         g_eInfo[client].bInRun = false;
 
         if (fTime < g_fSr[track] || g_fSr[track] == 0.0)
@@ -204,23 +241,14 @@ public void OnPlayerTrackChange(int client, int track)
     g_eInfo[client].iTrack = track;
 }
 
-//=================================
-// Natives
-//=================================
-
-public int Native_GetPlayerTrack(Handle plugin, int param)
+public Action OnPlayerNoclip(int client, const char[] command, int args)
 {
-    return g_eInfo[GetNativeCell(1)].iTrack;
-}
-
-public int Native_StopTimer(Handle plugin, int param)
-{
-    if (view_as<bool>(GetNativeCell(2)))
+    if (g_eInfo[client].bInRun)
     {
-        PrintToChat(GetNativeCell(1), "%s \x07Your timer has been stopped.", g_sPrefix);
+        StopTimer(client, true);
     }
 
-    g_eInfo[GetNativeCell(1)].bInRun = false;
+    return Plugin_Continue;
 }
 
 //=================================
@@ -321,7 +349,7 @@ void DB_GetSrHandler(Database db, DBResultSet results, const char[] error, int t
         LogError("Database error. (%s)", error);
         return;
     }
-    
+
     while (results.FetchRow())
     {
         g_fSr[track] = results.FetchFloat(4);
@@ -348,19 +376,6 @@ void DB_Query(const char[] sqlite, const char[] mysql, SQLQueryCallback callback
     {
         g_eDB.db.Query(callback, sqlite, data, priority);
     }
-}
-
-//=================================
-// Menus
-//=================================
-
-int MenuHandler_Sr(Menu menu, MenuAction action, int client, int index)
-{
-    if (action == MenuAction_Select)
-    {
-    }
-
-    return 0;
 }
 
 //=================================
@@ -535,12 +550,69 @@ public bool HitMask(int entity)
 }
 
 //=================================
-// Commands
+// Natives
 //=================================
 
-public Action CMD_Top(int client, int args)
+public int Native_GetPlayerTrack(Handle plugin, int param)
 {
-    g_mSrMenu.Display(client, MENU_TIME_FOREVER);
+    return g_eInfo[GetNativeCell(1)].iTrack;
+}
 
-    return Plugin_Handled;
+public int Native_StopTimer(Handle plugin, int param)
+{
+    if (!g_eInfo[GetNativeCell(1)].bInRun)
+    {
+        return;
+    }
+
+    if (view_as<bool>(GetNativeCell(2)))
+    {
+        PrintToChat(GetNativeCell(1), "%s \x07Your timer has been stopped.", g_sPrefix);
+    }
+
+    g_eInfo[GetNativeCell(1)].bInRun = false;
+}
+
+public int Native_GetPlayerTime(Handle plugin, int param)
+{
+    int client = GetNativeCell(1);
+
+    if (g_eInfo[client].bInRun)
+    {
+        return ((GetGameTickCount() - g_eInfo[client].iStartTick) * GetTickInterval());
+    }
+    else
+    {
+        return -1.0;
+    }
+}
+
+public int Native_IsPlayerInRun(Handle plugin, int param)
+{
+    return g_eInfo[GetNativeCell(1)].bInRun;
+}
+
+public int Native_GetPlayerPb(Handle plugin, int param)
+{
+    return g_fPb[GetNativeCell(1)][GetNativeCell(2)];
+}
+
+public int Native_GetSr(Handle plugin, int param)
+{
+    return g_fSr[GetNativeCell(1)];
+}
+
+public int Native_GetPlayerJumpCount(Handle plugin, int param)
+{
+    return g_eInfo[GetNativeCell(1)].iJumps;
+}
+
+public int Native_GetPlayerJumpSpeed(Handle plugin, int param)
+{
+    return g_eInfo[GetNativeCell(1)].iJumpSpeed;
+}
+
+public int Native_GetPlayerCurrentZone(Handle plugin, int param)
+{
+    return g_eInfo[GetNativeCell(1)].iCurrentZone;
 }

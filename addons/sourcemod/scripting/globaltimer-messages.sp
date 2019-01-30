@@ -86,7 +86,7 @@ public void OnPlayerFinishedTrack(int client, int track, float time, float pb)
 
     FormatMessage(client, g_sFinishMapMessage, sMessage, sizeof(sMessage));
 
-    PrintToChatAll("%s", sMessage);
+    PrintToChat(client, "%s", sMessage);
 }
 
 //=================================
@@ -115,10 +115,10 @@ void FillPlayerStrings(int client, float time, float pb, float oldpb = 0.0)
 
     GetClientName(client, g_ePlayerStrings[client].sName, 64);
 
-    FormatSeconds(time,  g_ePlayerStrings[client].sTime,  32, true);
-    FormatSeconds(pb,    g_ePlayerStrings[client].sPb,    32, true);
-    FormatSeconds(fDif,  g_ePlayerStrings[client].sDif,   32, true);
-    FormatSeconds(oldpb, g_ePlayerStrings[client].sOldPb, 32, true);
+    FormatSeconds(time,  g_ePlayerStrings[client].sTime,  32, Accuracy_High);
+    FormatSeconds(pb,    g_ePlayerStrings[client].sPb,    32, Accuracy_High);
+    FormatSeconds(fDif,  g_ePlayerStrings[client].sDif,   32, Accuracy_High);
+    FormatSeconds(oldpb, g_ePlayerStrings[client].sOldPb, 32, Accuracy_High);
 }
 
 bool GetCustomMessage(const char[] type, char[] result, int size, const char[] value = "message")

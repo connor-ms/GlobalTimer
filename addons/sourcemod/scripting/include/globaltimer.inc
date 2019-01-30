@@ -27,6 +27,13 @@ enum
     Zone_End     = 1
 };
 
+enum
+{
+    Accuracy_Low  = 0, // Rounds time to 1 decimal place
+    Accuracy_Med  = 1, // Rounds time to 3 decimal places
+    Accuracy_High = 2  // Doesn't round time (6 decimal places)
+};
+
 enum DBType
 {
     DB_MySQL,    // MySQL specified in databases.cfg
@@ -61,6 +68,18 @@ char g_sColors[][][] =
 
 char g_sPrefix[128] = " \x01[\x0BGlobalTimer\x01]";
 
+char g_sTracks[2][5] =
+{
+    "Main",
+    "Bonus"
+};
+
+char g_sZoneTypes[][] =
+{
+    "Start",
+    "End"
+};
+
 /**
  * Called when a player enters a zone.
  *
@@ -68,6 +87,7 @@ char g_sPrefix[128] = " \x01[\x0BGlobalTimer\x01]";
  * @param tick      Current server tick.
  * @param track     Track type.
  * @param type      Current server tick.
+ * @noreturn
  */
 forward void OnPlayerEnterZone(int client, int tick, int track, int type);
 
@@ -78,6 +98,7 @@ forward void OnPlayerEnterZone(int client, int tick, int track, int type);
  * @param tick      Current server tick.
  * @param track     Track type.
  * @param type      Current server tick.
+ * @noreturn
  */
 forward void OnPlayerLeaveZone(int client, int tick, int track, int type);
 
@@ -119,6 +140,7 @@ forward void OnPlayerFinishedTrack(int client, int track, float time, float pb);
  *
  * @param client    Client index.
  * @param track     Index of new track. (Main/Bonus)
+ * @noreturn
  */
 forward void OnPlayerTrackChange(int client, int track);
 
@@ -126,6 +148,7 @@ forward void OnPlayerTrackChange(int client, int track);
  * Returns the player's current track.
  *
  * @param client    Client index.
+ * @return          Index of player's track.
  */
 native int GetPlayerTrack(int client);
 
@@ -134,8 +157,68 @@ native int GetPlayerTrack(int client);
  *
  * @param client    Client index.
  * @param notify    Whether the player should be notified.
+ * @noreturn
  */
 native void StopTimer(int client, bool notify);
+
+/**
+ * Gets the player's time in seconds.
+ *
+ * @param client    Client index.
+ * @return          Player's time in seconds.
+ */
+native float GetPlayerTime(int client);
+
+/**
+ * Gets if the player is in a run or not.
+ *
+ * @param client    Client index.
+ * @return          Player's time in seconds.
+ */
+native bool IsPlayerInRun(int client);
+
+/**
+ * Gets the player's pb for the specified style.
+ *
+ * @param client    Client index.
+ * @param track     Track to get pb from.
+ * @return          Player's pb for track (in seconds).
+ */
+native float GetPlayerPb(int client, int track);
+
+/**
+ * Gets the player's total jumps for their current run.
+ *
+ * @param client    Client index.
+ * @return          Player's total jumps.
+ */
+native int GetPlayerJumpCount(int client);
+
+/**
+ * Gets the player's speed during last jump.
+ *
+ * @param client    Client index.
+ * @return          Player's speed.
+ */
+native float GetPlayerJumpSpeed(int client);
+
+/**
+ * Gets whether or not the player is inside a zone.
+ * -1 = not in a zone
+ * 0 or higher = zone index (see zone enum for indexes)
+ *
+ * @param client    Client index.
+ * @return          Player's current zone.
+ */
+native int GetPlayerCurrentZone(int client);
+
+/**
+ * Gets the sr for the specified track.
+ *
+ * @param track     Track index. (Main/Bonus)
+ * @return          Server record for track (in seconds).
+ */
+native float GetSr(int track);
 
 /**
  * Gets the smaller of the two numbers.
@@ -203,29 +286,40 @@ stock void vecavg(float source[3], float vec1[3], float vec2[3])
  * @param accurate  Whether to round to nearest tenth or thousandth.
  * @noreturn
  */
-stock void FormatSeconds(float time, char[] output, int size, bool accurate)
+stock void FormatSeconds(float time, char[] output, int size, int accuracy)
 {
     int   iHours;
     int   iMinutes;
-    float iSeconds;
+    float fSeconds;
+
+    char  sSeconds[16];
 
     iHours   = RoundToFloor(time / 3600);
     iMinutes = RoundToFloor((time - (iHours * 3600)) / 60);
     time    -= (iHours * 3600);
     time    -= (iMinutes * 60);
-    iSeconds = RoundToFloor(time) + (time - RoundToFloor(time));
+    fSeconds = RoundToFloor(time) + (time - RoundToFloor(time));
+
+    if (accuracy == Accuracy_Low)
+    {
+        Format(sSeconds, sizeof(sSeconds), "%.1fs", fSeconds);
+    }
+    else if (accuracy == Accuracy_Med)
+    {
+        Format(sSeconds, sizeof(sSeconds), "%.3fs", fSeconds);
+    }
+    else if (accuracy == Accuracy_High)
+    {
+        Format(sSeconds, sizeof(sSeconds), "%fs", fSeconds);
+    }
 
     if (iHours > 0)
     {
-        Format(output, size, accurate ? "%s%i:%s%i:%s%fs" : "%s%i:%s%i:%s%.1fs", (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10) ? "0" : "", iSeconds);
-    }
-    else if (iMinutes > 0)
-    {
-        Format(output, size, accurate ? "%s%i:%s%fs" : "%s%i:%s%.1fs", (iMinutes < 10) ? "0" : "", iMinutes, (iSeconds < 10.0) ? "0" : "", iSeconds);
+        Format(output, size, "%s%i:%s%i:%s%s", (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, (fSeconds < 10) ? "0" : "", sSeconds);
     }
     else
     {
-        Format(output, size, accurate ? "%s%fs" : "%s%.1fs", (iSeconds < 10) ? "0" : "", iSeconds);
+        Format(output, size, "%s%i:%s%s", (iMinutes < 10) ? "0" : "", iMinutes, (fSeconds < 10.0) ? "0" : "", sSeconds);
     }
 }
 
