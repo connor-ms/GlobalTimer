@@ -33,7 +33,6 @@ enum struct PlayerZoneInfo
 enum struct Zone
 {
     int      iEntityIndex;          // Entity index for zone.
-    int      iBorderEntityIndex;    // Secondary entity for start touch.
     int      iTrack;                // Main/Bonus.
     int      iType;                 // Start/End.
     bool     bValid;                // Whether or not zone entity has been created.
@@ -61,7 +60,6 @@ char g_sBeamName[128];
 char g_sBeamPath[256];
 
 Handle g_hLeaveZoneForward;
-Handle g_hLeaveZoneForwardPre;
 Handle g_hEnterZoneForward;
 Handle g_hTrackChangeForward;
 
@@ -111,7 +109,6 @@ public void OnPluginStart()
     SetupDB();
 
     g_hLeaveZoneForward   = CreateGlobalForward("OnPlayerLeaveZone", ET_Event, Param_Cell, Param_Cell, Param_Cell, Param_Cell);
-    g_hLeaveZoneForwardPre = CreateGlobalForward("OnPlayerLeaveZonePre", ET_Event, Param_Cell, Param_Cell, Param_Cell, Param_Cell);
     g_hEnterZoneForward   = CreateGlobalForward("OnPlayerEnterZone", ET_Event, Param_Cell, Param_Cell, Param_Cell, Param_Cell);
     g_hTrackChangeForward = CreateGlobalForward("OnPlayerTrackChange", ET_Event, Param_Cell, Param_Cell);
 
@@ -308,18 +305,6 @@ public void OnEndTouch(int entity, int client)
             Call_Finish();
 
             g_eInfo[client].iPreviousLeftTick = GetGameTickCount();
-        }
-
-        if (entity == g_eZones[i].iBorderEntityIndex)
-        {
-            Call_StartForward(g_hLeaveZoneForwardPre);
-
-            Call_PushCell(client);
-            Call_PushCell(GetGameTickCount());
-            Call_PushCell(g_eZones[i].iTrack);
-            Call_PushCell(g_eZones[i].iType);
-
-            Call_Finish();
         }
     }
 }
