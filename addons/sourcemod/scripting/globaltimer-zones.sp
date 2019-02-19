@@ -1,5 +1,6 @@
 #include <globaltimer>
 
+#include <cstrike>
 #include <sourcemod>
 #include <sdktools>
 #include <sdkhooks>
@@ -27,15 +28,9 @@ enum struct PlayerZoneInfo
      */
 
     int      iCurrentTrack;         // Current track the player is running.
-    int      iPreviousLeftTick;     // The last tick the player left a zone. Used to prevent /end abuse.
-};
-
-enum struct Zone
-{
-    int      iEntityIndex;          // Entity index for zone.
-    int      iTrack;                // Main/Bonus.
-    int      iType;                 // Start/End.
-    bool     bValid;                // Whether or not zone entity has been created.
+    int      iPreviousLeftTick;     // The last tick the player left a zone. Used to prevent /end starting timer.
+    int      iCurrentZone;          // Zone index the player is in. (-1 if not in a zone)
+    bool     bAllowPrespeed;        // Whether or not style allows prespeeding in start zone.
 };
 
 PlayerZoneInfo g_eInfo[MAXPLAYERS + 1];
@@ -138,6 +133,12 @@ public void OnPluginStart()
     RegConsoleCmd("sm_s", CMD_Main,    "Sets your track to main.");
     RegConsoleCmd("sm_b", CMD_Bonus,   "Sets your track to bonus.");
 
+    g_aZoneNames = new ArrayList(12);
+
+    g_aZoneNames.PushString("Start");
+    g_aZoneNames.PushString("End");
+    g_aZoneNames.PushString("Stage 1");
+
     if (g_bLate)
     {
         for (int i = 1; i < MAXPLAYERS; i++)
@@ -160,6 +161,9 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
     g_bLate = late;
 
     CreateNative("GetZoneOrigin", Native_GetZoneOrigin);
+    CreateNative("GetZoneInfo",   Native_GetZoneInfo);
+    CreateNative("FindZone",      Native_FindZone);
+    CreateNative("ForceRestartPlayer", Native_ForceRestartPlayer);
 
     return APLRes_Success;
 }
@@ -189,6 +193,13 @@ public void OnMapStart()
     }
     
     DB_LoadZones();
+}
+
+public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
+{
+    HandleZoneMovement(client);
+
+    return Plugin_Continue;
 }
 
 public void OnRoundStart(Event event, const char[] name, bool broadcast)
@@ -250,7 +261,7 @@ public void OnStartTouch(int entity, int client)
     {
         if (entity == g_eZones[i].iEntityIndex)
         {
-            if (!IsClientConnected(client)) // just to make sure idk if it really makes a difference or not
+            if (!IsPlayer(client))
             {
                 return;
             }
@@ -285,7 +296,7 @@ public void OnEndTouch(int entity, int client)
     {
         if (entity == g_eZones[i].iEntityIndex)
         {
-            if (!IsClientConnected(client))
+            if (!IsPlayer(client))
             {
                 return;
             }
@@ -307,6 +318,11 @@ public void OnEndTouch(int entity, int client)
             g_eInfo[client].iPreviousLeftTick = GetGameTickCount();
         }
     }
+}
+
+public void OnPlayerStyleChange(int client, Style settings)
+{
+    g_eInfo[client].bAllowPrespeed = settings.bAllowPrespeed;
 }
 
 //=================================
@@ -914,6 +930,56 @@ void RemoveZonePermanent(int client, int track)
     }
 }
 
+void HandleZoneMovement(int client)
+{
+    g_eInfo[client].iCurrentZone = GetPlayerCurrentZone(client);
+
+    if (g_eInfo[client].iCurrentZone == -1)
+    {
+        return;
+    }
+
+    if (!(GetEntityFlags(client) & FL_ONGROUND) && g_eZones[g_eInfo[client].iCurrentZone].iType == Zone_Start && IsPlayerAlive(client))
+    {
+        if (GetEntityMoveType(client) == MOVETYPE_NOCLIP)
+        {
+            SetEntityMoveType(client, MOVETYPE_WALK);
+
+            FakeClientCommand(client, "sm_r");
+            
+            PrintToChat(client, "%s \x07Cannot noclip in start zone.", g_sPrefix);
+        }
+
+        if (g_eInfo[client].bAllowPrespeed)
+        {
+            return;
+        }
+
+        float fVel[3];
+
+        GetEntPropVector(client, Prop_Data, "m_vecVelocity", fVel);
+
+        float fCurrentSpeed = SquareRoot(Pow(fVel[0], 2.0) + Pow(fVel[1], 2.0));
+
+        /*
+         * Thanks to m_bNightStalker on alliedmods.net
+         * https://forums.alliedmods.net/showthread.php?t=269935
+        */
+
+        if (fCurrentSpeed > 250.0)
+        {
+            float fDiv = fCurrentSpeed / 250.0;
+
+            if (fDiv != 0.0)
+            {
+                fVel[0] /= fDiv;
+                fVel[1] /= fDiv;
+                TeleportEntity(client, NULL_VECTOR, NULL_VECTOR, fVel);
+            }
+        }
+    }
+}
+
 //=================================
 // Timers
 //=================================
@@ -1361,24 +1427,18 @@ void OpenRemoveZoneMenu(int client)
 
 void OpenConfirmMenu(int client, int track)
 {
-    char sTitle[64];
-
     Menu hMenu = new Menu(MenuHandler_ConfirmDeletion);
 
     if (track == INVALID_TRACK)
     {
-        Format(sTitle, sizeof(sTitle), "Confirm deletion of\n'[%s] %s'?", g_sTracks[g_eInfo[client].iTrack], g_sZoneTypes[g_eInfo[client].iType]);
-
-        hMenu.SetTitle(sTitle);
+        hMenu.SetTitle("Confirm deletion of\n'[%s] %s'?", g_sTracks[g_eInfo[client].iTrack], g_sZoneTypes[g_eInfo[client].iType]);
 
         hMenu.AddItem("yes", "Yes");
         hMenu.AddItem("no", "No");
     }
     else
     {
-        Format(sTitle, sizeof(sTitle), "Confirm deletion of all '[%s]' zones?", g_sTracks[track]);
-
-        hMenu.SetTitle(sTitle);
+        hMenu.SetTitle("Confirm deletion of all '[%s]' zones?", g_sTracks[track]);
         
         hMenu.AddItem((track == Track_Main) ? "yesmain" : "yesbonus", "Yes");
         hMenu.AddItem("no", "No");
@@ -1528,6 +1588,17 @@ public Action CMD_Restart(int client, int args)
         return Plugin_Handled;
     }
 
+    if (!IsPlayerAlive(client))
+    {
+        ChangeClientTeam(client, GetRandomInt(2, 3));
+        return Plugin_Handled;
+    }
+
+    if (GetEntityMoveType(client) == MOVETYPE_NOCLIP)
+    {
+        SetEntityMoveType(client, MOVETYPE_WALK);
+    }
+
     StopTimer(client, false);
 
     TeleportEntity(client, g_fZoneOrigin[FindZoneIndex(g_eInfo[client].iCurrentTrack, Zone_Start)], NULL_VECTOR, {0.0, 0.0, 0.0});
@@ -1535,7 +1606,26 @@ public Action CMD_Restart(int client, int args)
     return Plugin_Handled;
 }
 
+//=================================
+// Natives
+//=================================
+
 public int Native_GetZoneOrigin(Handle plugin, int param)
 {
     SetNativeArray(3, g_fZoneOrigin[GetNativeCell(1)][GetNativeCell(2)], 3);
+}
+
+public int Native_GetZoneInfo(Handle plugin, int param)
+{
+    SetNativeArray(2, g_eZones[GetNativeCell(1)], sizeof(Zone));
+}
+
+public int Native_FindZone(Handle plugin, int param)
+{
+    return FindZoneIndex(GetNativeCell(1), GetNativeCell(2));
+}
+
+public int Native_ForceRestartPlayer(Handle plugin, int param)
+{
+    CMD_Restart(GetNativeCell(1), 0);
 }

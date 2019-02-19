@@ -11,7 +11,7 @@ enum struct PlayerStrings
     char sDif[32];
 }
 
-PlayerStrings g_ePlayerStrings[MAXPLAYERS + 1];
+PlayerStrings g_ePlayerStrings[MAXPLAYERS + 1][2];
 
 char g_sTrackNames[2][64] = 
 {
@@ -19,10 +19,10 @@ char g_sTrackNames[2][64] =
     "Bonus"
 };
 
-char g_sBeatSrMessage[512];
-char g_sBeatPbMessage[512];
-char g_sFirstPbMessage[512];
-char g_sFinishMapMessage[512];
+char g_sBeatSrTemplate[512];
+char g_sBeatPbTemplate[512];
+char g_sFirstPbTemplate[512];
+char g_sFinishMapTemplate[512];
 
 public Plugin myinfo = 
 {
@@ -44,56 +44,67 @@ public void OnPluginStart()
 // Forwards
 //=================================
 
-public void OnPlayerBeatSr(int client, int track, float newtime, float oldtime)
+public void OnPlayerBeatSr(int client, int style, int track, float newtime, float oldtime)
 {
     char sMessage[512];
 
-    FillPlayerStrings(client, newtime, newtime, oldtime);
+    FillPlayerStrings(client, newtime, oldtime, Accuracy_Med, 0);
 
-    FormatMessage(client, g_sBeatSrMessage, sMessage, sizeof(sMessage));
+    FormatMessage(client, g_sBeatSrTemplate, sMessage, sizeof(sMessage), 0);
 
     PrintToChatAll("%s", sMessage);
+    PrintToConsoleAll("\n%s", sMessage);
 }
 
-public void OnPlayerBeatPb(int client, int track, float newtime, float oldtime)
+public void OnPlayerBeatPb(int client, RunStats stats, float oldpb)
 {
-    char sMessage[512];
+    char sChatMessage[512];    // Chat uses medium accuracy to look cleaner.
+    char sServerMessage[512];  // Console uses high accuracy so "advanced" users can see.
 
-    FillPlayerStrings(client, newtime, newtime, oldtime);
+    FillPlayerStrings(client, stats.fTime, oldpb, Accuracy_Med,  0);
+    FillPlayerStrings(client, stats.fTime, oldpb, Accuracy_High, 1);
 
     /**
      * If there is no previous time, display special message for it.
      * Otherwise, display normal message for beating pb.
-    */
+     */
 
-    if (oldtime == 0.0)
+    if (oldpb == 0.0)
     {
-        FormatMessage(client, g_sFirstPbMessage, sMessage, sizeof(sMessage));
+        FormatMessage(client, g_sFirstPbTemplate, sChatMessage,   sizeof(sChatMessage),   0);
+        FormatMessage(client, g_sFirstPbTemplate, sServerMessage, sizeof(sServerMessage), 1);
     }
     else
     {
-        FormatMessage(client, g_sBeatPbMessage, sMessage, sizeof(sMessage));
+        FormatMessage(client, g_sBeatPbTemplate, sChatMessage,   sizeof(sChatMessage),   0);
+        FormatMessage(client, g_sBeatPbTemplate, sServerMessage, sizeof(sServerMessage), 1);
     }
 
-    PrintToChatAll("%s", sMessage);
+    PrintToChatAll("%s", sChatMessage);
+    PrintToConsoleAll("%s\n", sServerMessage);
+    PrintToServer("\n%s\n", sServerMessage);
 }
 
-public void OnPlayerFinishedTrack(int client, int track, float time, float pb)
+public void OnPlayerFinishedTrack(int client, RunStats stats, float pb)
 {
-    char sMessage[512];
+    char sChatMessage[512];
+    char sServerMessage[512];
 
-    FillPlayerStrings(client, time, pb);
+    FillPlayerStrings(client, stats.fTime, pb, Accuracy_Med,  0);
+    FillPlayerStrings(client, stats.fTime, pb, Accuracy_High, 1);
 
-    FormatMessage(client, g_sFinishMapMessage, sMessage, sizeof(sMessage));
-
-    PrintToChat(client, "%s", sMessage);
+    FormatMessage(client, g_sFinishMapTemplate, sChatMessage,   sizeof(sChatMessage),   0);
+    FormatMessage(client, g_sFinishMapTemplate, sServerMessage, sizeof(sServerMessage), 1);
+    
+    PrintToChat(client, "%s", sChatMessage);
+    PrintToConsole(client, "%s", sServerMessage);
 }
 
 //=================================
 // Other
 //=================================
 
-void FillPlayerStrings(int client, float time, float pb, float oldpb = 0.0)
+void FillPlayerStrings(int client, float time, float pb, int accuracy, int type, float oldpb = 0.0)
 {
     float fDif;
 
@@ -102,23 +113,23 @@ void FillPlayerStrings(int client, float time, float pb, float oldpb = 0.0)
      *
      * If they did beat their pb, both time and pb will be the same, so use oldpb to
      * find the difference.
-    */
+     */
 
     if (oldpb == 0.0)
     {
-        fDif = time - pb;
+        fDif = FloatAbs(time - pb);
     }
     else
     {
-        fDif = oldpb - time;
+        fDif = FloatAbs(oldpb - time);
     }
 
-    GetClientName(client, g_ePlayerStrings[client].sName, 64);
+    GetClientName(client, g_ePlayerStrings[client][type].sName,  64);
 
-    FormatSeconds(time,  g_ePlayerStrings[client].sTime,  32, Accuracy_High);
-    FormatSeconds(pb,    g_ePlayerStrings[client].sPb,    32, Accuracy_High);
-    FormatSeconds(fDif,  g_ePlayerStrings[client].sDif,   32, Accuracy_High);
-    FormatSeconds(oldpb, g_ePlayerStrings[client].sOldPb, 32, Accuracy_High);
+    FormatSeconds(time,   g_ePlayerStrings[client][type].sTime,  32, accuracy, false, false);
+    FormatSeconds(pb,     g_ePlayerStrings[client][type].sPb,    32, accuracy, false, false);
+    FormatSeconds(fDif,   g_ePlayerStrings[client][type].sDif,   32, accuracy, false, false);
+    FormatSeconds(oldpb,  g_ePlayerStrings[client][type].sOldPb, 32, accuracy, false, false);
 }
 
 bool GetCustomMessage(const char[] type, char[] result, int size, const char[] value = "message")
@@ -142,34 +153,66 @@ bool GetCustomMessage(const char[] type, char[] result, int size, const char[] v
     return true;
 }
 
-void FormatMessage(int client, char[] template, char[] message, int size)
+void FormatMessage(int client, char[] template, char[] message, int size, int type)
 {
+    int  iRank,    iTotal;
+    char sRank[5], sTotal[5];
+
+    RunFrame eFrame;
+    GetPlayerFrame(client, eFrame);
+
+    Style eStyle;
+    GetPlayerStyleSettings(client, eStyle);
+
+    /**
+     * Get info and setup last few needed strings.
+     */
+
+    iRank  = GetPlacementByTime(eFrame.fTime, eFrame.iStyle, eFrame.iTrack);
+    iTotal = GetTotalTimes(eFrame.iStyle, eFrame.iTrack);
+
+    IntToString(iRank,  sRank,  sizeof(sRank));
+    IntToString(iTotal, sTotal, sizeof(sTotal));
+
     /**
      * Copy the template string to the string that will be modified (otherwise
      * the message will only work once, since after that all the variables
      * will be replaced already)
-    */
+     */
 
     strcopy(message, size, template);
 
     /**
      * First replace all the variables.
-     * Yeah this is pretty ghetto but it works ¯\_(ツ)_/¯
-    */
+     */
 
     ReplaceString(message, size, "{prefix}",  g_sPrefix,                             false);
-    ReplaceString(message, size, "{name}",    g_ePlayerStrings[client].sName,        false);
-    ReplaceString(message, size, "{time}",    g_ePlayerStrings[client].sTime,        false);
-    ReplaceString(message, size, "{pb}",      g_ePlayerStrings[client].sPb,          false);
-    ReplaceString(message, size, "{oldpb}",   g_ePlayerStrings[client].sOldPb,       false);
-    ReplaceString(message, size, "{dif}",     g_ePlayerStrings[client].sDif,         false);
-    ReplaceString(message, size, "{track}",   g_sTrackNames[GetPlayerTrack(client)], false);
-    
-    /**
-     * Then replace color aliases with "correct" colors.
-    */
+    ReplaceString(message, size, "{name}",    g_ePlayerStrings[client][type].sName,  false);
+    ReplaceString(message, size, "{time}",    g_ePlayerStrings[client][type].sTime,  false);
+    ReplaceString(message, size, "{pb}",      g_ePlayerStrings[client][type].sPb,    false);
+    ReplaceString(message, size, "{oldpb}",   g_ePlayerStrings[client][type].sOldPb, false);
+    ReplaceString(message, size, "{dif}",     g_ePlayerStrings[client][type].sDif,   false);
+    ReplaceString(message, size, "{track}",   g_sTrackNames[eFrame.iTrack],          false);
+    ReplaceString(message, size, "{style}",   eStyle.sName,                          false);
+    ReplaceString(message, size, "{rank}",    sRank,                                 false);
+    ReplaceString(message, size, "{total}",   sTotal,                                false);
 
-    FormatColors(message, size);
+    /**
+     * Then replace color aliases with "correct" colors if it's a chat message.
+     * If it isn't, remove all color aliases.
+     */
+    
+    if (type == 0)
+    {
+        FormatColors(message, size);
+    }
+    else
+    {
+        for (int i = 0; i < sizeof(g_sColors); i++)
+        {
+            ReplaceString(message, size, g_sColors[i][0], "", false);
+        }
+    }
 }
 
 bool GetAllVariables()
@@ -179,11 +222,11 @@ bool GetAllVariables()
     /**
      * If anything fails, bSuccess will be set to false, showing something failed.
      * No way to check what failed though lol sucks for whoever has to deal with that
-    */
+     */
 
     /**
      * Find custom variables.
-    */
+     */
 
     bSuccess = GetCustomMessage("variables", g_sPrefix, sizeof(g_sPrefix), "{prefix}");
     FormatColors(g_sPrefix, sizeof(g_sPrefix));
@@ -193,12 +236,12 @@ bool GetAllVariables()
 
     /**
      * Find custom messages for each event.
-    */
+     */
 
-    bSuccess = GetCustomMessage("sr",      g_sBeatSrMessage,    sizeof(g_sBeatSrMessage));
-    bSuccess = GetCustomMessage("pb",      g_sBeatPbMessage,    sizeof(g_sBeatPbMessage));
-    bSuccess = GetCustomMessage("firstpb", g_sFirstPbMessage,   sizeof(g_sFirstPbMessage));
-    bSuccess = GetCustomMessage("finish",  g_sFinishMapMessage, sizeof(g_sFinishMapMessage));
+    bSuccess = GetCustomMessage("sr",      g_sBeatSrTemplate,    sizeof(g_sBeatSrTemplate));
+    bSuccess = GetCustomMessage("pb",      g_sBeatPbTemplate,    sizeof(g_sBeatPbTemplate));
+    bSuccess = GetCustomMessage("firstpb", g_sFirstPbTemplate,   sizeof(g_sFirstPbTemplate));
+    bSuccess = GetCustomMessage("finish",  g_sFinishMapTemplate, sizeof(g_sFinishMapTemplate));
 
     return bSuccess;
 }
@@ -211,7 +254,7 @@ public Action CMD_ReloadMessages(int client, int args)
 {
     /**
      * Refreshes the template strings.
-    */
+     */
 
     if (GetAllVariables())
     {

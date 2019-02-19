@@ -6,11 +6,91 @@
 #define VERSION "0.01a"
 #define URL     "www.steamcommunity.com/id/connorms"
 
+#define MAXSTYLES 8
+
 enum struct DB
 {
-    DBType   iType;                 // Type of connection. (MySQL or SQLite)
-    bool     bConnected;            // Whether a connection has been made or not.
-    Database db;                    // Connection to database.
+    DBType   iType;       // Type of connection. (MySQL or SQLite)
+    bool     bConnected;  // Whether a connection has been made or not.
+    Database db;          // Connection to database.
+};
+
+enum struct RunFrame
+{
+    float fTime;          // Time up until current frame.
+    float fOffset;        // Time missed between ticks. (adjusted at start and end only)
+
+    bool  bPaused;        // If timer is currently paused or not.
+
+    int   iTrack;         // Track run is occurring on.
+    int   iStyle;         // Style run is occurring on.
+
+    int   iButtons;       // Buttons most recently pressed.
+    int   iJumps;         // Amount of jumps until current frame.
+    float fSync;          // Average sync up to current point;
+    
+    float fMaxSpeed;      // Highest speed achieved during run.
+};
+
+enum struct RunStats
+{
+    float fTime;          // Time it took to complete the map.
+    float fDifPb;         // Difference between fTime and player's pb.
+    float fDifSr;         // Difference between fTime and server record.
+
+    int   iTrack;         // Track run occurred on.
+    int   iStyle;         // Style run occurred on.
+
+    int   iJumps;         // Amount of jumps it took to complete the run.
+    float fSSJ;           // Player's speed on 6th jump during run.
+    float fSync;          // Average sync throughout run.
+
+    float fAvgSpeed;      // Average speed throughout run.
+    float fMaxSpeed;      // Highest speed achieved during run.
+};
+
+enum struct RunDBInfo
+{
+    int   iId;
+
+    float fTime;
+    int   iDate;
+
+    int   iStyle;
+    int   iTrack;
+
+    int   iJumps;
+    float fSync;
+    float fSSJ;
+
+    float fAvgSpeed;      // Average speed throughout run.
+    float fMaxSpeed;      // Highest speed achieved during run.
+};
+
+enum struct Style
+{
+    int iIndex;
+
+    char sName[64];
+    char sShortcut[16];
+
+    int iAllowForwards;
+    int iAllowLeft;
+    int iAllowRight;
+    int iAllowBack;
+
+    bool bAutohop;
+    bool bAllowPrespeed;
+    int  iCustom;
+};
+
+enum struct Zone
+{
+    int  iEntityIndex; // Entity index for zone.
+    int  iTrack;       // Main/Bonus.
+    int  iType;        // Start/End/Stage.
+    int  iStage;       // 0 if start/end, otherwise stage #.
+    bool bValid;       // Whether or not zone entity has been created.
 };
 
 enum
@@ -24,7 +104,8 @@ enum
 {
     INVALID_ZONE = -1,
     Zone_Start   = 0,
-    Zone_End     = 1
+    Zone_End     = 1,
+    Zone_Stage   = 2
 };
 
 enum
@@ -39,6 +120,19 @@ enum DBType
     DB_MySQL,    // MySQL specified in databases.cfg
     DB_SQLite,   // SQLite specified in databases.cfg
     DB_Undefined // No entry in databases.cfg (just used for setup, after setup it should be set to SQLite)
+};
+
+enum
+{
+    KeyReq_Disabled, // Disallow keypress
+    KeyReq_Enabled,  // Allow keypress
+    KeyReq_Required  // Require keypress 
+};
+
+enum
+{
+    CustomStyle_HSW    = 1,
+    CustomStyle_ADOnly = 2
 };
 
 /**
@@ -62,8 +156,7 @@ char g_sColors[][][] =
     { "{blue}",       "\x0B" },
     { "{darkblue}",   "\x0C" },
     { "{gray2}",      "\x0D" },
-    { "{orchid}",     "\x0E" },
-  
+    { "{orchid}",     "\x0E" }
 };
 
 char g_sPrefix[128] = " \x01[\x0BGlobalTimer\x01]";
@@ -79,6 +172,8 @@ char g_sZoneTypes[][] =
     "Start",
     "End"
 };
+
+ArrayList g_aZoneNames;
 
 /**
  * Called when a player enters a zone.
@@ -103,37 +198,66 @@ forward void OnPlayerEnterZone(int client, int tick, int track, int type);
 forward void OnPlayerLeaveZone(int client, int tick, int track, int type);
 
 /**
+ * Called when a player's timer is incremented.
+ *
+ * @param client    Client index.
+ * @param info      Information for current frame.
+ * @param amount    Amount timer will be incremented by.
+ * @noreturn
+ */
+forward void OnPlayerTimerIncrement(int client, RunFrame info, float amount);
+
+/**
  * Called when a player beats the current server record.
  *
  * @param client    Client index.
+ * @param style     Style the run occurred on.
  * @param track     Track the run occurred on (main or bonus).
  * @param newtime   New sr.
  * @param oldtime   Previous sr.
  * @noreturn
  */
-forward void OnPlayerBeatSr(int client, int track, float newtime, float oldtime);
+forward void OnPlayerBeatSr(int client, int style, int track, float newtime, float oldtime);
 
 /**
  * Called when a player beats their pb, but doesn't beat sr.
  *
  * @param client    Client index.
- * @param track     Track the run occurred on (main or bonus).
- * @param newtime   New personal best.
- * @param oldtime   Client's previous time.
+ * @param stats     Information about the run.
+ * @param oldpb     Player's previous pb.
  * @noreturn
  */
-forward void OnPlayerBeatPb(int client, int track, float newtime, float oldtime);
+forward void OnPlayerBeatPb(int client, RunStats stats, float oldpb);
 
 /**
  * Called when a player finishes the map, but doesn't beat pb or sr.
  *
  * @param client      Client index.
- * @param track       Track the run occurred on (main or bonus).
- * @param time        Amount of time it took to complete the track.
+ * @param stats       Information about the run.
  * @param pb          Players current pb.
  * @noreturn
  */
-forward void OnPlayerFinishedTrack(int client, int track, float time, float pb);
+forward void OnPlayerFinishedTrack(int client, RunStats stats, float pb);
+
+/**
+ * Called when the server record for each track is loaded.
+ *
+ * @param time        Time (in seconds) for record.
+ * @param info        More detailed information about run. (see RunDBInfo)
+ * @noreturn
+ */
+forward void OnSrLoaded(float time, RunDBInfo info);
+
+/**
+ * Called when the database responded with player's pb for each track.
+ *
+ * @param client      Client index.
+ * @param style       Style index.
+ * @param track       Track the run occurred on (main or bonus).
+ * @param time        Player's pb (in seconds) for track.
+ * @noreturn
+ */
+forward void OnPbLoaded(int client, int style, int track, float time);
 
 /**
  * Called when a player changes their track.
@@ -145,12 +269,13 @@ forward void OnPlayerFinishedTrack(int client, int track, float time, float pb);
 forward void OnPlayerTrackChange(int client, int track);
 
 /**
- * Returns the player's current track.
+ * Called when a player changes their style.
  *
  * @param client    Client index.
- * @return          Index of player's track.
+ * @param settings  Settings for new style.
+ * @noreturn
  */
-native int GetPlayerTrack(int client);
+forward void OnPlayerStyleChange(int client, Style settings);
 
 /**
  * Stops the player's timer.
@@ -162,37 +287,31 @@ native int GetPlayerTrack(int client);
 native void StopTimer(int client, bool notify);
 
 /**
- * Gets the player's time in seconds.
- *
- * @param client    Client index.
- * @return          Player's time in seconds.
- */
-native float GetPlayerTime(int client);
-
-/**
  * Gets if the player is in a run or not.
  *
  * @param client    Client index.
- * @return          Player's time in seconds.
+ * @return          Whether the player is in a run or not.
  */
 native bool IsPlayerInRun(int client);
 
 /**
- * Gets the player's pb for the specified style.
+ * Gets the player's most recent run frame.
  *
  * @param client    Client index.
+ * @param output    Array to copy results to.
+ * @noreturn 
+ */
+native void GetPlayerFrame(int client, any output[sizeof(RunFrame)]);
+
+/**
+ * Gets the player's pb for the specified track.
+ *
+ * @param client    Client index.
+ * @param style     Style to get pb from.
  * @param track     Track to get pb from.
  * @return          Player's pb for track (in seconds).
  */
-native float GetPlayerPb(int client, int track);
-
-/**
- * Gets the player's total jumps for their current run.
- *
- * @param client    Client index.
- * @return          Player's total jumps.
- */
-native int GetPlayerJumpCount(int client);
+native float GetPlayerPb(int client, int style, int track);
 
 /**
  * Gets the player's speed during last jump.
@@ -213,12 +332,78 @@ native float GetPlayerJumpSpeed(int client);
 native int GetPlayerCurrentZone(int client);
 
 /**
- * Gets the sr for the specified track.
+ * Finds the index of a zone by track and zone type.
  *
- * @param track     Track index. (Main/Bonus)
- * @return          Server record for track (in seconds).
+ * @param track     Track type. (main/bonus)
+ * @param type      Zone type.
+ * @return          Zone's index. (-1 if none found)
  */
-native float GetSr(int track);
+native int FindZone(int track, int type);
+
+/**
+ * Copies zone info off of zone index.
+ *
+ * @param index     Index returned by FindZone.
+ * @param output    Array to copy zone info into.
+ * @noreturn
+ */
+native void GetZoneInfo(int index, any output[sizeof(Zone)]);
+
+/**
+ * Gets the server record for the specified track.
+ *
+ * @param style     Style index.
+ * @param track     Track type.
+ * @return          Server record for specified style/track.
+ */
+native float GetSr(int style, int track);
+
+/**
+ * Gets the settings for player's current style.
+ *
+ * @param client    Client index.
+ * @param output    Array to copy results into.
+ * @noreturn
+ */
+native void GetPlayerStyleSettings(int client, any output[sizeof(Style)]);
+
+/**
+ * Gets the rank out of all runs for specified time on style + track combo.
+ *
+ * @param time      Time to find rank of.
+ * @param style     Style times to compare time to.
+ * @param track     Track times to compare time to.
+ * @return          Index of time compared to other times for style + track combo.
+ */
+native int GetPlacementByTime(float time, int style, int track);
+
+/**
+ * Gets the total amount of runs for specified style + track combo.
+ *
+ * @param style     Style to check times from.
+ * @param track     Track to check times from.
+ * @return          Total amount of runs completed.
+ */
+native int GetTotalTimes(int style, int track);
+
+/**
+ * Restarts a players timer and teleports them to the start zone.
+ *
+ * @param client    Client index.
+ * @noreturn
+ */
+native void ForceRestartPlayer(int client);
+
+/**
+ * Checks if the entity is a valid player.
+ *
+ * @param entity    Entity index.
+ * @return          Whether or not the entity is a player.
+ */
+stock bool IsPlayer(int entity)
+{
+    return (entity <= MAXPLAYERS && entity != 0 && IsClientConnected(entity));
+}
 
 /**
  * Gets the smaller of the two numbers.
@@ -283,22 +468,21 @@ stock void vecavg(float source[3], float vec1[3], float vec2[3])
  * @param time      Time in seconds.
  * @param output    String to be modified with finished format.
  * @param size      Size of string.
- * @param accurate  Whether to round to nearest tenth or thousandth.
+ * @param accurate  Amount the time should be rounded to.
+ *                    - Low: 1 decimal place
+ *                    - Medium: 3 decimal places
+ *                    - High: No rounding (6 decimal places)
+ * @param shortened Whether minutes should be cut out if the time is < 1 minute.
  * @noreturn
  */
-stock void FormatSeconds(float time, char[] output, int size, int accuracy)
+stock void FormatSeconds(float seconds, char[] output, int size, int accuracy, bool sign, bool shortened)
 {
-    int   iHours;
-    int   iMinutes;
-    float fSeconds;
+    int   iHours   = RoundToFloor(FloatAbs(seconds) / 3600);
+    int   iMinutes = RoundToFloor(FloatAbs(seconds) / 60 - (iHours * 60));
+    float fSeconds = FloatAbs(seconds) - (iHours * 3600) - (iMinutes * 60);
 
-    char  sSeconds[16];
-
-    iHours   = RoundToFloor(time / 3600);
-    iMinutes = RoundToFloor((time - (iHours * 3600)) / 60);
-    time    -= (iHours * 3600);
-    time    -= (iMinutes * 60);
-    fSeconds = RoundToFloor(time) + (time - RoundToFloor(time));
+    char sSeconds[12];
+    char cSign;
 
     if (accuracy == Accuracy_Low)
     {
@@ -313,13 +497,29 @@ stock void FormatSeconds(float time, char[] output, int size, int accuracy)
         Format(sSeconds, sizeof(sSeconds), "%fs", fSeconds);
     }
 
-    if (iHours > 0)
+    if (sign)
     {
-        Format(output, size, "%s%i:%s%i:%s%s", (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, (fSeconds < 10) ? "0" : "", sSeconds);
+        cSign = (seconds < 0.0) ? '-' : '+';
     }
     else
     {
-        Format(output, size, "%s%i:%s%s", (iMinutes < 10) ? "0" : "", iMinutes, (fSeconds < 10.0) ? "0" : "", sSeconds);
+        cSign = '\0';
+    }
+
+    if (iHours > 0)
+    {
+        Format(output, size, "%s%s%i:%s%i:%s", cSign, (iHours < 10) ? "0" : "", iHours, (iMinutes < 10) ? "0" : "", iMinutes, sSeconds);
+    }
+    else
+    {
+        if (shortened && iMinutes == 0)
+        {
+            Format(output, size, "%s%s", cSign, sSeconds);
+        }
+        else
+        {
+            Format(output, size, "%s%s%i:%s%s", cSign, (iMinutes < 10) ? "0" : "", iMinutes, (fSeconds < 10.0) ? "0" : "", sSeconds);
+        }
     }
 }
 
